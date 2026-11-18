@@ -2,7 +2,7 @@
 
 export type ID = string;
 
-export type Role = 'OWNER' | 'MEMBER' | 'VIEWER';
+export type Role = 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
 
 export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 

@@ -66,6 +66,7 @@ export const riskMeta: Record<RiskLevel, { label: string; color: string; bg: str
 
 export const roleMeta: Record<Role, { label: string; pill: string; description: string }> = {
   OWNER: { label: 'Owner', pill: 'bg-midnight text-porcelain', description: 'Full board and membership control' },
+  ADMIN: { label: 'Admin', pill: 'bg-apricot-50 text-apricot-500', description: 'Manage boards and team settings' },
   MEMBER: { label: 'Member', pill: 'bg-mint-200 text-midnight', description: 'Create, edit, assign and move tasks' },
   VIEWER: { label: 'Viewer', pill: 'bg-slatey-100 text-slatey-600', description: 'Read-only access' },
 };

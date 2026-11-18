@@ -13,6 +13,7 @@ import type { Invite, Membership, Role, User } from '@/types';
 
 const roleIcon: Record<Role, typeof Crown> = {
   OWNER: Crown,
+  ADMIN: Shield,
   MEMBER: Shield,
   VIEWER: Eye,
 };
@@ -34,22 +35,32 @@ export function TeamPage() {
   const isOwner = currentUser && roleFor(currentUser.id) === 'OWNER';
 
   const setRole = async (uid: string, role: Role) => {
-    await membershipService.setRole(uid, role);
-    setMemberships((prev) => prev.map((m) => (m.userId === uid ? { ...m, role } : m)));
-    toast({ type: 'success', title: 'Role updated', message: `${users.find((u) => u.id === uid)?.name} is now ${roleMeta[role].label}.` });
+    try {
+      await membershipService.setRole(uid, role);
+      setMemberships((prev) => prev.map((m) => (m.userId === uid ? { ...m, role } : m)));
+      toast({ type: 'success', title: 'Role updated', message: `${users.find((u) => u.id === uid)?.name} is now ${roleMeta[role].label}.` });
+    } catch (cause) {
+      toast({ type: 'error', title: 'Could not update role', message: cause instanceof Error ? cause.message : 'Please try again.' });
+    }
   };
 
   const sendInvite = async (email: string, role: Role) => {
-    const inv = await membershipService.invite(email, role);
-    setInvites((prev) => [...prev, inv]);
-    toast({ type: 'success', title: 'Invitation sent', message: `${email} was invited as ${roleMeta[role].label}.` });
-    setInviteOpen(false);
+    try {
+      await membershipService.invite(email, role);
+    } catch (cause) {
+      toast({ type: 'error', title: 'Invitations unavailable', message: cause instanceof Error ? cause.message : 'Secure invitations are not configured.' });
+      setInviteOpen(false);
+    }
   };
 
   const revoke = async (id: string) => {
-    await membershipService.revokeInvite(id);
-    setInvites((prev) => prev.filter((i) => i.id !== id));
-    toast({ type: 'info', title: 'Invitation revoked' });
+    try {
+      await membershipService.revokeInvite(id);
+      setInvites((prev) => prev.filter((i) => i.id !== id));
+      toast({ type: 'info', title: 'Invitation revoked' });
+    } catch (cause) {
+      toast({ type: 'error', title: 'Could not revoke invitation', message: cause instanceof Error ? cause.message : 'Please try again.' });
+    }
   };
 
   return (

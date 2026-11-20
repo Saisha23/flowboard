@@ -7,6 +7,7 @@ interface AvatarProps {
   className?: string;
   ring?: boolean;
   title?: string;
+  avatarUrl?: string | null;
 }
 
 const sizes = {
@@ -16,7 +17,7 @@ const sizes = {
   lg: 'h-10 w-10 text-sm',
 };
 
-export function Avatar({ initials, color = '#777C8E', size = 'sm', className, ring, title }: AvatarProps) {
+export function Avatar({ initials, color = '#777C8E', size = 'sm', className, ring, title, avatarUrl }: AvatarProps) {
   return (
     <span
       className={cx(
@@ -28,13 +29,13 @@ export function Avatar({ initials, color = '#777C8E', size = 'sm', className, ri
       style={{ backgroundColor: color }}
       title={title}
     >
-      {initials}
+      {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full rounded-full object-cover" /> : initials}
     </span>
   );
 }
 
 interface AvatarStackProps {
-  people: { id: string; name: string; initials: string; color: string }[];
+  people: { id: string; name: string; initials: string; color: string; avatarUrl?: string | null }[];
   size?: 'xs' | 'sm' | 'md';
   max?: number;
   className?: string;
@@ -47,7 +48,7 @@ export function AvatarStack({ people, size = 'sm', max = 3, className }: AvatarS
     <div className={cx('flex items-center', className)}>
       <div className="flex -space-x-1.5">
         {shown.map((p) => (
-          <Avatar key={p.id} initials={p.initials} color={p.color} size={size} ring title={p.name} />
+          <Avatar key={p.id} initials={p.initials} color={p.color} size={size} ring title={p.name} avatarUrl={p.avatarUrl} />
         ))}
         {extra > 0 && (
           <span

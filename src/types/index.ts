@@ -2,7 +2,7 @@
 
 export type ID = string;
 
-export type Role = 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
+export type Role = 'owner' | 'member' | 'viewer';
 
 export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 
@@ -13,17 +13,21 @@ export type LabelColor = 'mint' | 'apricot' | 'sand' | 'coral' | 'amber' | 'slat
 export interface User {
   id: ID;
   name: string;
+  profileName?: string | null;
   email: string;
   initials: string;
   color: string; // avatar background hex
+  avatarUrl?: string | null;
   role: Role;
   title: string;
 }
 
 export interface Label {
   id: ID;
+  boardId: ID;
   name: string;
   color: LabelColor;
+  sourceColor?: string | null;
 }
 
 export interface Task {
@@ -35,6 +39,7 @@ export interface Task {
   position: number;
   priority: Priority;
   dueDate: string | null; // ISO
+  completedAt?: string | null;
   assigneeIds: ID[];
   labelIds: ID[];
   createdAt: string;
@@ -71,13 +76,15 @@ export interface Workspace {
 
 export type ActivityType =
   | 'task_moved'
+  | 'task_deleted'
   | 'task_created'
   | 'task_completed'
   | 'deadline_changed'
   | 'assignee_added'
   | 'comment_added'
   | 'role_changed'
-  | 'summary_generated';
+  | 'summary_generated'
+  | 'activity_recorded';
 
 export interface Activity {
   id: ID;
@@ -86,16 +93,20 @@ export interface Activity {
   target: string;
   detail: string;
   timestamp: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface RiskFactor {
   id: ID;
   category:
     | 'overdue'
+    | 'approaching_deadline'
+    | 'priority'
     | 'deadline_churn'
     | 'stagnation'
     | 'dependency_bottleneck'
-    | 'workload';
+    | 'workload'
+    | 'other';
   label: string;
   severity: RiskLevel;
   score: number; // 0-100 contribution to drift
@@ -162,7 +173,7 @@ export interface AISummary {
   pendingWork: string[];
   blockers: string[];
   priorityRecommendations: PriorityRecommendation[];
-  confidence: number;
+  confidence?: number | null;
 }
 
 export interface PriorityRecommendation {

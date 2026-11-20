@@ -12,7 +12,7 @@ export function formatDate(iso: string | null, opts?: { relative?: boolean }): s
 }
 
 export function relativeDay(d: Date): string {
-  const now = new Date('2026-11-17T09:00:00Z');
+  const now = new Date();
   const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
   const diff = Math.round((startOf(d).getTime() - startOf(now).getTime()) / 86400000);
   if (diff === 0) return 'Today';
@@ -25,11 +25,13 @@ export function relativeDay(d: Date): string {
 
 export function isOverdue(iso: string | null): boolean {
   if (!iso) return false;
-  return new Date(iso).getTime() < new Date('2026-11-17T09:00:00Z').getTime();
+  const deadline = new Date(iso);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) deadline.setHours(23, 59, 59, 999);
+  return deadline.getTime() < Date.now();
 }
 
 export function timeAgo(iso: string): string {
-  const now = new Date('2026-11-17T09:00:00Z').getTime();
+  const now = Date.now();
   const then = new Date(iso).getTime();
   const diff = (now - then) / 1000;
   if (diff < 60) return 'just now';
@@ -65,10 +67,9 @@ export const riskMeta: Record<RiskLevel, { label: string; color: string; bg: str
 };
 
 export const roleMeta: Record<Role, { label: string; pill: string; description: string }> = {
-  OWNER: { label: 'Owner', pill: 'bg-midnight text-porcelain', description: 'Full board and membership control' },
-  ADMIN: { label: 'Admin', pill: 'bg-apricot-50 text-apricot-500', description: 'Manage boards and team settings' },
-  MEMBER: { label: 'Member', pill: 'bg-mint-200 text-midnight', description: 'Create, edit, assign and move tasks' },
-  VIEWER: { label: 'Viewer', pill: 'bg-slatey-100 text-slatey-600', description: 'Read-only access' },
+  owner: { label: 'Owner', pill: 'bg-midnight text-porcelain', description: 'Full board and membership control' },
+  member: { label: 'Member', pill: 'bg-mint-200 text-midnight', description: 'Create, edit, assign and move tasks' },
+  viewer: { label: 'Viewer', pill: 'bg-slatey-100 text-slatey-600', description: 'Read-only access' },
 };
 
 export const priorityOrder: Priority[] = ['URGENT', 'HIGH', 'MEDIUM', 'LOW'];

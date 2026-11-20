@@ -1,13 +1,13 @@
 import {
-  ArrowRight, CheckCircle2, Clock, MessageSquare, Plus, Sparkles, UserPlus, GitPullRequest, CalendarClock,
+  ArrowRight, CheckCircle2, Clock, MessageSquare, Plus, Sparkles, UserPlus, GitPullRequest, CalendarClock, Trash2, Info,
 } from 'lucide-react';
 import type { Activity, User } from '@/types';
-import { Avatar } from '@/components/ui/Avatar';
 import { cx, timeAgo } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 
 const iconFor: Record<Activity['type'], LucideIcon> = {
   task_moved: ArrowRight,
+  task_deleted: Trash2,
   task_created: Plus,
   task_completed: CheckCircle2,
   deadline_changed: CalendarClock,
@@ -15,10 +15,12 @@ const iconFor: Record<Activity['type'], LucideIcon> = {
   comment_added: MessageSquare,
   role_changed: GitPullRequest,
   summary_generated: Sparkles,
+  activity_recorded: Info,
 };
 
 const toneFor: Record<Activity['type'], string> = {
   task_moved: 'text-slatey-500 bg-slatey-100',
+  task_deleted: 'text-coral bg-coral/10',
   task_created: 'text-mint-500 bg-mint-50',
   task_completed: 'text-sage bg-sage/12',
   deadline_changed: 'text-amber bg-amber/12',
@@ -26,6 +28,7 @@ const toneFor: Record<Activity['type'], string> = {
   comment_added: 'text-slatey-500 bg-slatey-100',
   role_changed: 'text-apricot-400 bg-apricot-50',
   summary_generated: 'text-mint-500 bg-mint-50',
+  activity_recorded: 'text-slatey-500 bg-slatey-100',
 };
 
 export function ActivityFeed({ items, users, className }: { items: Activity[]; users: User[]; className?: string }) {

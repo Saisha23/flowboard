@@ -8,7 +8,9 @@ lerna-debug.log*
 
 node_modules
 dist
+build/
 dist-ssr
+.vite/
 *.local
 
 .vscode/*
@@ -29,6 +31,34 @@ dist-ssr
 # Test and coverage output
 coverage/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Python environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# Local database files
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+
+# Local private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+.secrets/
+credentials.json
+service-account*.json
 
 # Bolt-specific local metadata
 .bolt/

@@ -248,8 +248,8 @@ with check (owner_id = auth.uid());
 drop policy if exists "workspaces_update_manager" on public.workspaces;
 create policy "workspaces_update_manager"
 on public.workspaces for update to authenticated
-using (public.is_workspace_manager(id))
-with check (public.is_workspace_manager(id));
+using (public.is_workspace_owner(id))
+with check (public.is_workspace_owner(id));
 
 drop policy if exists "workspaces_delete_owner" on public.workspaces;
 create policy "workspaces_delete_owner"
@@ -264,7 +264,10 @@ using (public.is_workspace_member(workspace_id));
 drop policy if exists "workspace_members_insert_manager" on public.workspace_members;
 create policy "workspace_members_insert_manager"
 on public.workspace_members for insert to authenticated
-with check (public.is_workspace_owner(workspace_id));
+with check (
+  public.is_workspace_owner(workspace_id)
+  and user_id is distinct from auth.uid()
+);
 
 drop policy if exists "workspace_members_update_manager" on public.workspace_members;
 create policy "workspace_members_update_manager"
@@ -350,6 +353,6 @@ using (
     select 1
     from public.boards b
     where b.id = tasks.board_id
-      and public.is_workspace_manager(b.workspace_id)
+      and public.is_workspace_owner(b.workspace_id)
   )
 );

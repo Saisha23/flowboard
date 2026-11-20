@@ -9,37 +9,89 @@ import { useApp } from '@/hooks/useApp';
 import { useToast } from '@/components/ui/Toast';
 import { summaryService } from '@/services';
 import { cx, priorityMeta } from '@/lib/utils';
+import { exportSummaryPdf } from '@/lib/exportPdf';
 import type { AISummary } from '@/types';
 
-type State = 'empty' | 'loading' | 'success' | 'error';
+type State = 'empty' | 'fetching' | 'loading' | 'success' | 'error';
 
 export function AISummaryPage() {
-  const { boards, tasks } = useApp();
+  const { boards, tasks, loading, error, workspace } = useApp();
   const { toast } = useToast();
   const [state, setState] = useState<State>('empty');
   const [summary, setSummary] = useState<AISummary | null>(null);
+  const board = boards[0];
 
   useEffect(() => {
-    summaryService.get('b1').then((s) => {
+    if (loading || error || !workspace) return;
+    const boardId = boards[0]?.id;
+    if (!boardId) {
+      setSummary(null);
+      setState('empty');
+      return;
+    }
+
+    let active = true;
+    setSummary(null);
+    setState('fetching');
+    summaryService.get(boardId).then((s) => {
+      if (!active) return;
       if (s) { setSummary(s); setState('success'); }
+      else setState('empty');
+    }).catch((cause) => {
+      if (!active) return;
+      setState('error');
+      toast({ type: 'error', title: 'Could not load saved summary', message: cause instanceof Error ? cause.message : 'Please try again.' });
     });
-  }, []);
+    return () => { active = false; };
+  }, [loading, error, workspace, boards, toast]);
 
   const generate = async () => {
+    if (loading || error || !workspace) return;
+    if (!board) {
+      toast({ type: 'error', title: 'No board available', message: 'Create a board before generating a summary.' });
+      return;
+    }
     setState('loading');
     try {
-      const s = await summaryService.generate('b1');
+      const s = await summaryService.generate(board.id);
       setSummary(s);
       setState('success');
       toast({ type: 'success', title: 'Summary generated', message: 'AI report ready to share.' });
-    } catch {
+    } catch (cause) {
       setState('error');
-      toast({ type: 'error', title: 'Generation failed', message: 'Something went wrong. Try again.' });
+      toast({ type: 'error', title: 'Generation failed', message: cause instanceof Error ? cause.message : 'Please try again.' });
     }
   };
 
-  const board = boards[0];
-  const completedCount = tasks.filter((t) => t.listId === 'list-5').length;
+  const boardTasks = tasks.filter((task) => task.boardId === board?.id);
+  const completedCount = boardTasks.filter((task) => task.completedAt).length;
+
+  const handleExportPdf = (report: AISummary) => {
+    let initiated: boolean;
+    try {
+      initiated = exportSummaryPdf({
+        summary: report,
+        boardName: board?.name ?? 'Flowboard',
+        generatedAt: report.generatedAt,
+        taskCount: boardTasks.length,
+        completedCount,
+        confidence: report.confidence,
+      });
+    } catch (cause) {
+      toast({
+        type: 'error',
+        title: 'Export failed',
+        message: cause instanceof Error ? cause.message : 'Could not generate the PDF.',
+      });
+      return;
+    }
+
+    if (initiated) {
+      toast({ type: 'success', title: 'Print dialog opened', message: 'Choose "Save as PDF" in the print dialog to download.' });
+    } else {
+      toast({ type: 'error', title: 'Export failed', message: 'Your browser blocked the PDF popup. Please allow popups for this site and try again.' });
+    }
+  };
 
   return (
     <div className="mx-auto max-w-[1100px] px-6 py-8 md:px-10">
@@ -55,28 +107,50 @@ export function AISummaryPage() {
         <div className="flex items-center gap-2">
           {state === 'success' && summary && (
             <>
-              <Button variant="outline" size="md" onClick={() => toast({ type: 'info', title: 'Copied', message: 'Summary copied to clipboard.' })}>
+              <Button
+                id="ai-summary-copy-btn"
+                variant="outline"
+                size="md"
+                onClick={() => {
+                  const text = [
+                    summary.executiveSummary,
+                    summary.projectOverview,
+                    ...summary.completedWork,
+                    ...summary.pendingWork,
+                    ...summary.blockers,
+                  ].join('\n\n');
+                  navigator.clipboard.writeText(text).then(
+                    () => toast({ type: 'info', title: 'Copied', message: 'Summary text copied to clipboard.' }),
+                    () => toast({ type: 'error', title: 'Copy failed', message: 'Could not access the clipboard.' }),
+                  );
+                }}
+              >
                 <Copy className="h-3.5 w-3.5" /> Copy
               </Button>
-              <Button variant="outline" size="md" onClick={() => toast({ type: 'info', title: 'Exported', message: 'Summary downloaded as PDF.' })}>
+              <Button
+                id="ai-summary-export-top-btn"
+                variant="outline"
+                size="md"
+                onClick={() => handleExportPdf(summary)}
+              >
                 <Download className="h-3.5 w-3.5" /> Export
               </Button>
             </>
           )}
-          <Button variant="primary" size="md" onClick={generate} disabled={state === 'loading'}>
+          <Button variant="primary" size="md" onClick={generate} disabled={loading || Boolean(error) || !workspace || state === 'loading' || !board}>
             <Sparkles className="h-4 w-4" /> {state === 'success' ? 'Regenerate' : 'Generate summary'}
           </Button>
         </div>
       </div>
 
       {/* Meta strip */}
-      <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-midnight/[0.07] bg-white px-4 py-3">
-        <Link to={`/app/boards/${board?.id ?? 'b1'}`} className="flex items-center gap-2 text-sm font-semibold text-midnight hover:underline">
-          {board?.name ?? 'Q4 Launch — Mobile App'}
+      {!loading && !error && workspace && board && <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-midnight/[0.07] bg-white px-4 py-3">
+        <Link to={board ? `/app/boards/${board.id}` : '/app/boards'} className="flex items-center gap-2 text-sm font-semibold text-midnight hover:underline">
+          {board?.name ?? 'No board selected'}
           <ArrowRight className="h-3 w-3" />
         </Link>
         <span className="text-slatey-300">·</span>
-        <span className="text-2xs font-medium text-slatey-500">{tasks.length} tasks</span>
+        <span className="text-2xs font-medium text-slatey-500">{boardTasks.length} tasks</span>
         <Badge tone="sage" dot>{completedCount} completed</Badge>
         {summary && (
           <>
@@ -84,19 +158,32 @@ export function AISummaryPage() {
             <span className="inline-flex items-center gap-1 text-2xs font-medium text-slatey-500">
               <Clock className="h-3 w-3" /> Last generated {new Date(summary.generatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
             </span>
-            <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-mint-50 px-2.5 py-1 text-2xs font-semibold text-mint-500">
-              <Bot className="h-3 w-3" /> {Math.round(summary.confidence * 100)}% confidence
-            </span>
+            {summary.confidence != null && (
+              <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-mint-50 px-2.5 py-1 text-2xs font-semibold text-mint-500">
+                <Bot className="h-3 w-3" /> {Math.round(summary.confidence * 100)}% confidence
+              </span>
+            )}
           </>
         )}
-      </div>
+      </div>}
 
-      <AnimatePresence mode="wait">
-        {state === 'empty' && <EmptyState key="empty" onGenerate={generate} />}
-        {state === 'loading' && <LoadingState key="loading" />}
-        {state === 'error' && <ErrorState key="error" onRetry={generate} />}
-        {state === 'success' && summary && <SummaryReport key="success" summary={summary} />}
-      </AnimatePresence>
+      {loading ? (
+        <p role="status" className="mt-6 text-sm text-slatey">Loading workspace data…</p>
+      ) : error ? (
+        <p role="alert" className="mt-6 rounded-xl border border-coral/20 bg-coral/[0.06] px-4 py-3 text-sm text-coral">{error}</p>
+      ) : !workspace ? (
+        <p role="status" className="mt-6 text-sm text-slatey">No workspace membership.</p>
+      ) : !board ? (
+        <p role="status" className="mt-6 text-sm text-slatey">No boards are available in this workspace.</p>
+      ) : (
+        <AnimatePresence mode="wait">
+          {state === 'empty' && <EmptyState key="empty" onGenerate={generate} />}
+          {state === 'fetching' && <p key="fetching" role="status" className="mt-6 text-sm text-slatey">Loading saved summary…</p>}
+          {state === 'loading' && <LoadingState key="loading" />}
+          {state === 'error' && <ErrorState key="error" onRetry={generate} />}
+          {state === 'success' && summary && <SummaryReport key="success" summary={summary} onExportPdf={() => handleExportPdf(summary)} />}
+        </AnimatePresence>
+      )}
     </div>
   );
 }
@@ -176,9 +263,34 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-function SummaryReport({ summary }: { summary: AISummary }) {
+function SummaryReport({ summary, onExportPdf }: { summary: AISummary; onExportPdf: () => void }) {
+  const { toast } = useToast();
+
+  const handleShareLink = () => {
+    // Sharing requires workspace authentication. There is no public/token-based
+    // sharing backend. We copy the authenticated app URL and inform the user
+    // that the recipient must be a workspace member to access it.
+    const url = window.location.href;
+    navigator.clipboard.writeText(url).then(
+      () => toast({
+        type: 'info',
+        title: 'Link copied',
+        message: 'Recipients must be workspace members and signed in to view this summary.',
+      }),
+      () => toast({
+        type: 'error',
+        title: 'Copy failed',
+        message: 'Could not access the clipboard.',
+      }),
+    );
+  };
+
   return (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mt-6 space-y-4">
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mt-6 space-y-4"
+    >
       {/* Executive summary */}
       <Card className="overflow-hidden">
         <div className="border-b border-midnight/8 bg-mint-50/60 px-6 py-4">
@@ -268,12 +380,26 @@ function SummaryReport({ summary }: { summary: AISummary }) {
         </div>
       </Card>
 
-      {/* Share bar */}
+      {/* Share / export bar */}
       <div className="flex items-center justify-between rounded-2xl border border-midnight/[0.07] bg-white px-5 py-4">
         <p className="text-sm text-slatey">This summary is easy to share with stakeholders.</p>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm"><Share2 className="h-3.5 w-3.5" /> Share link</Button>
-          <Button variant="secondary" size="sm"><Download className="h-3.5 w-3.5" /> Export PDF</Button>
+          <Button
+            id="ai-summary-share-btn"
+            variant="outline"
+            size="sm"
+            onClick={handleShareLink}
+          >
+            <Share2 className="h-3.5 w-3.5" /> Share link
+          </Button>
+          <Button
+            id="ai-summary-export-bottom-btn"
+            variant="secondary"
+            size="sm"
+            onClick={onExportPdf}
+          >
+            <Download className="h-3.5 w-3.5" /> Export PDF
+          </Button>
         </div>
       </div>
     </motion.div>

@@ -11,10 +11,11 @@ interface TaskCardProps {
   users: User[];
   onClick: () => void;
   isOverlay?: boolean;
+  readOnly?: boolean;
 }
 
-export function TaskCard({ task, labels, users, onClick, isOverlay }: TaskCardProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id, data: { type: 'task', task } });
+export function TaskCard({ task, labels, users, onClick, isOverlay, readOnly }: TaskCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id, disabled: readOnly, data: { type: 'task', task } });
 
   const style = {
     transform: CSS.Translate.toString(transform),
@@ -23,7 +24,7 @@ export function TaskCard({ task, labels, users, onClick, isOverlay }: TaskCardPr
   };
 
   const pm = priorityMeta[task.priority];
-  const overdue = isOverdue(task.dueDate) && task.listId !== 'list-5';
+  const overdue = isOverdue(task.dueDate) && !task.completedAt;
   const taskLabels = labels.filter((l) => task.labelIds.includes(l.id));
   const assignees = task.assigneeIds.map((id) => users.find((u) => u.id === id)).filter(Boolean) as User[];
   const hasDriftSignal = overdue || task.deadlineChanges >= 2 || task.stagnationDays >= 4 || task.blockedByIds.length > 0;

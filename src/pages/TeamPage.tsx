@@ -12,31 +12,67 @@ import { cx, roleMeta } from '@/lib/utils';
 import type { Invite, Membership, Role, User } from '@/types';
 
 const roleIcon: Record<Role, typeof Crown> = {
-  OWNER: Crown,
-  ADMIN: Shield,
-  MEMBER: Shield,
-  VIEWER: Eye,
+  owner: Crown,
+  member: Shield,
+  viewer: Eye,
 };
 
 export function TeamPage() {
-  const { users, currentUser } = useApp();
+  const { users, currentUser, workspace, loading, error: appError } = useApp();
   const { toast } = useToast();
   const [memberships, setMemberships] = useState<Membership[]>([]);
+  const [membershipsLoading, setMembershipsLoading] = useState(false);
+  const [membershipsError, setMembershipsError] = useState<string | null>(null);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
   useEffect(() => {
-    membershipService.list().then(setMemberships);
-    membershipService.invites().then(setInvites);
-  }, []);
+    let active = true;
+    setMemberships([]);
+    setInvites([]);
+    setMembershipsError(null);
 
-  const roleFor = (uid: string) => memberships.find((m) => m.userId === uid)?.role ?? 'MEMBER';
-  const isOwner = currentUser && roleFor(currentUser.id) === 'OWNER';
+    if (loading || appError || !workspace) {
+      setMembershipsLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    setMembershipsLoading(true);
+    membershipService.list(workspace.id).then((rows) => {
+      if (active) setMemberships(rows);
+    }).catch((cause) => {
+      if (!active) return;
+      const message = cause instanceof Error ? cause.message : 'Please try again.';
+      setMembershipsError(message);
+      toast({ type: 'error', title: 'Could not load member roles', message });
+    }).finally(() => {
+      if (active) setMembershipsLoading(false);
+    });
+    membershipService.invites().then((rows) => {
+      if (active) setInvites(rows);
+    }).catch((cause) => {
+      if (active) {
+        toast({ type: 'error', title: 'Could not load invitations', message: cause instanceof Error ? cause.message : 'Please try again.' });
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [workspace, loading, appError, toast]);
+
+  const roleFor = (uid: string) => memberships.find((m) => m.userId === uid)?.role
+    ?? users.find((user) => user.id === uid)?.role
+    ?? 'member';
+  const isOwner = currentUser && roleFor(currentUser.id) === 'owner';
 
   const setRole = async (uid: string, role: Role) => {
     try {
-      await membershipService.setRole(uid, role);
+      if (!workspace) throw new Error('No workspace available.');
+      await membershipService.setRole(uid, role, workspace.id);
       setMemberships((prev) => prev.map((m) => (m.userId === uid ? { ...m, role } : m)));
       toast({ type: 'success', title: 'Role updated', message: `${users.find((u) => u.id === uid)?.name} is now ${roleMeta[role].label}.` });
     } catch (cause) {
@@ -69,7 +105,15 @@ export function TeamPage() {
         <div>
           <p className="text-2xs font-semibold uppercase tracking-widest2 text-slatey-400">Workspace</p>
           <h1 className="mt-1.5 font-display text-display-md font-bold tracking-tightish text-midnight">Team members</h1>
-          <p className="mt-2 text-sm text-slatey">{users.length} people with access to Atlas Studio.</p>
+          <p className="mt-2 text-sm text-slatey">
+            {loading || membershipsLoading
+              ? 'Loading team members...'
+              : appError || membershipsError
+                ? 'Team members could not be loaded.'
+                : workspace
+                  ? `${users.length} people with access to ${workspace.name}.`
+                  : 'No workspace membership.'}
+          </p>
         </div>
         {isOwner && (
           <Button variant="primary" size="md" onClick={() => setInviteOpen(true)}>
@@ -96,38 +140,62 @@ export function TeamPage() {
       </div>
 
       {/* Members */}
-      <Card className="mt-6" hover>
-        <div className="flex items-center justify-between px-6 pb-3 pt-5">
-          <h2 className="font-display text-base font-bold text-midnight">Members</h2>
-          <span className="text-2xs text-slatey-400">{users.length} total</span>
-        </div>
-        <ul className="divide-y divide-midnight/5">
-          {users.map((u) => {
-            const role = roleFor(u.id);
-            const Icon = roleIcon[role];
-            return (
-              <li key={u.id} className="flex items-center gap-4 px-6 py-3.5 transition-colors hover:bg-midnight/[0.02]">
-                <Avatar initials={u.initials} color={u.color} size="md" />
-                <button onClick={() => setSelectedUser(u)} className="min-w-0 flex-1 text-left">
-                  <p className="truncate text-sm font-semibold text-midnight hover:underline">{u.name}</p>
-                  <p className="truncate text-2xs text-slatey-400">{u.email} · {u.title}</p>
-                </button>
-                {isOwner && u.id !== currentUser?.id ? (
-                  <RoleSelector role={role} onChange={(r) => setRole(u.id, r)} />
-                ) : (
-                  <span className={cx('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-2xs font-semibold', roleMeta[role].pill)}>
-                    <Icon className="h-3 w-3" />
-                    {roleMeta[role].label}
-                  </span>
-                )}
-                <button className="flex h-7 w-7 items-center justify-center rounded-md text-slatey-400 hover:bg-midnight/5 hover:text-midnight" onClick={() => setSelectedUser(u)}>
-                  <MoreHorizontal className="h-4 w-4" />
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </Card>
+      {loading ? (
+        <p role="status" className="mt-6 text-sm text-slatey">Loading workspace members...</p>
+      ) : appError ? (
+        <p role="alert" className="mt-6 rounded-xl border border-coral/20 bg-coral/[0.06] px-4 py-3 text-sm text-coral">{appError}</p>
+      ) : !workspace ? (
+        <p role="status" className="mt-6 rounded-xl border border-amber/20 bg-amber/[0.06] px-4 py-3 text-sm text-midnight">
+          You do not have access to a workspace yet. Ask a workspace owner to add you.
+        </p>
+      ) : (
+        <>
+          {membershipsError ? (
+            <p role="alert" className="mt-6 rounded-xl border border-coral/20 bg-coral/[0.06] px-4 py-3 text-sm text-coral">
+              Member roles could not be loaded: {membershipsError}
+            </p>
+          ) : membershipsLoading ? (
+            <p role="status" className="mt-6 text-sm text-slatey">Loading workspace members...</p>
+          ) : users.length === 0 ? (
+            <p role="status" className="mt-6 rounded-xl border border-midnight/10 bg-white px-4 py-3 text-sm text-slatey">
+              No members were returned for this workspace.
+            </p>
+          ) : (
+            <Card className="mt-6" hover>
+              <div className="flex items-center justify-between px-6 pb-3 pt-5">
+                <h2 className="font-display text-base font-bold text-midnight">Members</h2>
+                <span className="text-2xs text-slatey-400">{users.length} total</span>
+              </div>
+              <ul className="divide-y divide-midnight/5">
+                {users.map((u) => {
+                  const role = roleFor(u.id);
+                  const Icon = roleIcon[role];
+                  return (
+                    <li key={u.id} className="flex items-center gap-4 px-6 py-3.5 transition-colors hover:bg-midnight/[0.02]">
+                      <Avatar initials={u.initials} color={u.color} avatarUrl={u.avatarUrl} size="md" />
+                      <button onClick={() => setSelectedUser(u)} className="min-w-0 flex-1 text-left">
+                        <p className="truncate text-sm font-semibold text-midnight hover:underline">{u.name}</p>
+                        <p className="truncate text-2xs text-slatey-400">{u.email} · {u.title}</p>
+                      </button>
+                      {isOwner && u.id !== currentUser?.id ? (
+                        <RoleSelector role={role} onChange={(r) => setRole(u.id, r)} />
+                      ) : (
+                        <span className={cx('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-2xs font-semibold', roleMeta[role].pill)}>
+                          <Icon className="h-3 w-3" />
+                          {roleMeta[role].label}
+                        </span>
+                      )}
+                      <button className="flex h-7 w-7 items-center justify-center rounded-md text-slatey-400 hover:bg-midnight/5 hover:text-midnight" onClick={() => setSelectedUser(u)}>
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          )}
+        </>
+      )}
 
       {/* Pending invites */}
       {invites.length > 0 && (
@@ -157,7 +225,7 @@ export function TeamPage() {
       )}
 
       <InviteModal open={inviteOpen} onClose={() => setInviteOpen(false)} onSend={sendInvite} />
-      <MemberProfileModal user={selectedUser} role={selectedUser ? roleFor(selectedUser.id) : 'MEMBER'} onClose={() => setSelectedUser(null)} />
+      <MemberProfileModal user={selectedUser} role={selectedUser ? roleFor(selectedUser.id) : 'member'} onClose={() => setSelectedUser(null)} />
     </div>
   );
 }
@@ -204,13 +272,13 @@ function RoleSelector({ role, onChange }: { role: Role; onChange: (r: Role) => v
 
 function InviteModal({ open, onClose, onSend }: { open: boolean; onClose: () => void; onSend: (email: string, role: Role) => void }) {
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<Role>('MEMBER');
+  const [role, setRole] = useState<Role>('member');
 
   return (
     <Modal open={open} onClose={onClose} size="md" label="Invite people">
       <div className="overflow-hidden rounded-2xl border border-midnight/10 bg-white shadow-lift">
         <div className="flex items-center justify-between border-b border-midnight/8 bg-porcelain-50 px-6 py-4">
-          <h2 className="font-display text-base font-bold text-midnight">Invite to Atlas Studio</h2>
+          <h2 className="font-display text-base font-bold text-midnight">Invite to this workspace</h2>
           <ModalCloseButton onClose={onClose} />
         </div>
         <div className="space-y-5 px-6 py-6">

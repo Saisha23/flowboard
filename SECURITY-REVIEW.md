@@ -54,10 +54,9 @@ These migrations were reviewed but not executed.
 - Test live activity trigger events.
 - Test AI provider output and rate limits.
 
-## Test Status
+## Verification
 
-- Frontend build: passed
-- Frontend typecheck: passed
-- Frontend lint: passed with Fast Refresh warnings only
-- Frontend Vitest: 8 passed
-- Backend pytest: 14 passed
+The test counts from the original review are historical and are not a current
+test report. Use the commands in `README.md` to run the frontend and backend
+checks against the current working tree before publishing or applying
+migrations.

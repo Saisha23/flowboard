@@ -52,8 +52,8 @@ function LandingNav({ onOpenMobile }: { onOpenMobile: () => void }) {
           <a href="#drift-radar" className="text-sm font-medium text-slatey transition-colors hover:text-midnight">Drift Radar</a>
         </nav>
         <div className="hidden items-center gap-2 md:flex">
-          <Link to="/app"><Button variant="ghost" size="md">Sign in</Button></Link>
-          <Link to="/app"><Button variant="primary" size="md">Get started <ArrowRight className="h-4 w-4" /></Button></Link>
+          <Link to="/login"><Button variant="ghost" size="md">Sign in</Button></Link>
+          <Link to="/signup"><Button variant="primary" size="md">Get started <ArrowRight className="h-4 w-4" /></Button></Link>
         </div>
         <button onClick={onOpenMobile} className="flex h-9 w-9 items-center justify-center rounded-lg text-midnight md:hidden" aria-label="Open menu">
           <Menu className="h-5 w-5" />
@@ -83,8 +83,8 @@ function MobileNav({ onClose }: { onClose: () => void }) {
           ))}
         </nav>
         <div className="mt-6 flex flex-col gap-2">
-          <Link to="/app"><Button variant="outline" className="w-full">Sign in</Button></Link>
-          <Link to="/app"><Button variant="primary" className="w-full">Get started</Button></Link>
+          <Link to="/login"><Button variant="outline" className="w-full">Sign in</Button></Link>
+          <Link to="/signup"><Button variant="primary" className="w-full">Get started</Button></Link>
         </div>
       </motion.div>
     </div>
@@ -122,7 +122,7 @@ function Hero() {
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link to="/app"><Button variant="primary" size="lg">Start your workspace <ArrowRight className="h-4 w-4" /></Button></Link>
+              <Link to="/signup"><Button variant="primary" size="lg">Start your workspace <ArrowRight className="h-4 w-4" /></Button></Link>
               <Link to="/app"><Button variant="outline" size="lg">Explore the product</Button></Link>
             </div>
 
@@ -334,7 +334,7 @@ function FinalCTA() {
               Set up your workspace in under a minute. The first drift signal is usually waiting.
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-              <Link to="/app"><Button variant="secondary" size="lg">Start your workspace <ArrowRight className="h-4 w-4" /></Button></Link>
+              <Link to="/signup"><Button variant="secondary" size="lg">Start your workspace <ArrowRight className="h-4 w-4" /></Button></Link>
               <Link to="/app"><Button variant="outline" size="lg">Explore the product</Button></Link>
             </div>
           </div>

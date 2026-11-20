@@ -1,8 +1,4 @@
-// Flowboard AI — service layer
-// Mock-backed during frontend development. Swap implementations to FastAPI/Supabase later.
-// Components must never import mockData directly — they go through these services.
-
-import { labels as mockLabels } from './mockData';
+// Flowboard AI — API-backed service layer.
 import type {
   Activity,
   AISummary,
@@ -20,16 +16,29 @@ import type {
   Workspace,
 } from '@/types';
 import { apiFetch } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 
-// In-memory mutable copies so the UI feels real
-const _labels = [...mockLabels];
+function isLabelColor(value: unknown): value is Label['color'] {
+  return typeof value === 'string'
+    && ['mint', 'apricot', 'sand', 'coral', 'amber', 'slatey', 'sage'].includes(value);
+}
+
+function mapLabel(row: { id: string; name: string; color?: string | null }, boardId: string): Label {
+  return {
+    id: row.id,
+    boardId,
+    name: row.name,
+    color: isLabelColor(row.color) ? row.color : 'mint',
+    sourceColor: row.color ?? null,
+  };
+}
 
 export const workspaceService = {
   async list(): Promise<Workspace[]> {
     const response = await apiFetch('/workspaces');
     if (!response.ok) throw new Error(await response.text());
-    const rows = await response.json() as Array<{ id: string; name: string; plan: string; color: string | null }>;
-    return rows.map((row) => ({ id: row.id, name: row.name, plan: row.plan, color: row.color ?? '#B8E4D0' }));
+    const rows = await response.json() as Array<{ id: string; name: string; plan?: string; color?: string | null }>;
+    return rows.map((row) => ({ id: row.id, name: row.name, plan: row.plan ?? 'FREE', color: row.color ?? '#B8E4D0' }));
   },
   async current(): Promise<Workspace | null> {
     const workspaces = await workspaceService.list();
@@ -38,14 +47,26 @@ export const workspaceService = {
   async switch(id: string): Promise<Workspace> {
     const response = await apiFetch(`/workspaces/${id}`);
     if (!response.ok) throw new Error(await response.text());
-    const row = await response.json() as { id: string; name: string; plan: string; color: string | null };
-    return { id: row.id, name: row.name, plan: row.plan, color: row.color ?? '#B8E4D0' };
+    const row = await response.json() as { id: string; name: string; plan?: string; color?: string | null };
+    return { id: row.id, name: row.name, plan: row.plan ?? 'FREE', color: row.color ?? '#B8E4D0' };
   },
   async create(input: { name: string; plan?: string; color?: string }): Promise<Workspace> {
     const response = await apiFetch('/workspaces', { method: 'POST', body: JSON.stringify(input) });
     if (!response.ok) throw new Error(await response.text());
-    const row = await response.json() as { id: string; name: string; plan: string; color: string | null };
-    return { id: row.id, name: row.name, plan: row.plan, color: row.color ?? '#B8E4D0' };
+    const row = await response.json() as { id: string; name: string; plan?: string; color?: string | null };
+    return { id: row.id, name: row.name, plan: row.plan ?? 'FREE', color: row.color ?? '#B8E4D0' };
+  },
+  async createFirst(name: string, slug: string): Promise<string> {
+    if (!supabase) throw new Error('Supabase authentication is not configured.');
+    const { data, error } = await supabase.rpc('create_workspace', {
+      p_name: name,
+      p_slug: slug,
+    });
+    if (error) throw error;
+    if (typeof data !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data)) {
+      throw new Error('Supabase returned an invalid workspace ID.');
+    }
+    return data;
   },
   async update(id: string, patch: Partial<Workspace>): Promise<Workspace> {
     const response = await apiFetch(`/workspaces/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
@@ -65,20 +86,20 @@ export const boardService = {
     if (!targetWorkspaceId) return [];
     const response = await apiFetch(`/workspaces/${targetWorkspaceId}/boards`);
     if (!response.ok) throw new Error(await response.text());
-    const rows = await response.json() as Array<{ id: string; workspace_id: string; name: string; description: string; color: string | null }>;
+    const rows = await response.json() as Array<{ id: string; workspace_id: string; name: string; description: string; color?: string | null }>;
     return rows.map((row) => ({ id: row.id, workspaceId: row.workspace_id, name: row.name, description: row.description, color: (row.color ?? 'mint') as Board['color'] }));
   },
   async get(id: string): Promise<Board | undefined> {
     const response = await apiFetch(`/boards/${id}`);
     if (response.status === 404) return undefined;
     if (!response.ok) throw new Error(await response.text());
-    const row = await response.json() as { id: string; workspace_id: string; name: string; description: string; color: string | null };
+    const row = await response.json() as { id: string; workspace_id: string; name: string; description: string; color?: string | null };
     return { id: row.id, workspaceId: row.workspace_id, name: row.name, description: row.description, color: (row.color ?? 'mint') as Board['color'] };
   },
   async create(workspaceId: string, input: { name: string; description?: string; color?: Board['color'] }): Promise<Board> {
-    const response = await apiFetch('/boards', { method: 'POST', body: JSON.stringify({ workspace_id: workspaceId, name: input.name, description: input.description ?? '', color: input.color ?? 'mint' }) });
+    const response = await apiFetch('/boards', { method: 'POST', body: JSON.stringify({ workspace_id: workspaceId, name: input.name, description: input.description ?? '' }) });
     if (!response.ok) throw new Error(await response.text());
-    const row = await response.json() as { id: string; workspace_id: string; name: string; description: string; color: string | null };
+    const row = await response.json() as { id: string; workspace_id: string; name: string; description: string; color?: string | null };
     return { id: row.id, workspaceId: row.workspace_id, name: row.name, description: row.description, color: (row.color ?? 'mint') as Board['color'] };
   },
   async update(id: string, patch: Partial<Pick<Board, 'name' | 'description' | 'color'>>): Promise<Board> {
@@ -95,13 +116,33 @@ export const boardService = {
 
 export const listService = {
   async forBoard(boardId: string): Promise<List[]> {
-    return [
-      { id: 'list-1', boardId, name: 'Backlog', color: 'slatey', position: 0 },
-      { id: 'list-2', boardId, name: 'To do', color: 'sand', position: 1 },
-      { id: 'list-3', boardId, name: 'In progress', color: 'amber', position: 2 },
-      { id: 'list-4', boardId, name: 'In review', color: 'apricot', position: 3 },
-      { id: 'list-5', boardId, name: 'Done', color: 'mint', position: 4 },
-    ];
+    const response = await apiFetch(`/boards/${boardId}/lists`);
+    if (!response.ok) throw new Error(await response.text());
+    const rows = await response.json() as Array<{ id: string; board_id: string; name: string; position: number; color?: string }>;
+    const palette: List['color'][] = ['slatey', 'sand', 'amber', 'apricot', 'mint', 'sage'];
+    return rows.map((row, index) => ({
+      id: row.id,
+      boardId: row.board_id,
+      name: row.name,
+      position: row.position,
+      color: isLabelColor(row.color) ? row.color : palette[index % palette.length],
+    }));
+  },
+  async create(boardId: string, name: string): Promise<List> {
+    const response = await apiFetch(`/boards/${boardId}/lists`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+    const row = await response.json() as { id: string; board_id: string; name: string; position: number; color?: string };
+    const palette: List['color'][] = ['slatey', 'sand', 'amber', 'apricot', 'mint', 'sage'];
+    return {
+      id: row.id,
+      boardId: row.board_id,
+      name: row.name,
+      position: row.position,
+      color: isLabelColor(row.color) ? row.color : palette[row.position % palette.length],
+    };
   },
 };
 
@@ -123,42 +164,37 @@ export const taskService = {
     if (patch.description !== undefined) body.description = patch.description;
     if (patch.listId !== undefined) {
       body.list_id = patch.listId;
-      body.status = patch.listId === 'list-5' ? 'DONE'
-        : patch.listId === 'list-4' ? 'IN_REVIEW'
-        : patch.listId === 'list-3' ? 'IN_PROGRESS'
-        : patch.listId === 'list-2' ? 'TODO'
-        : 'BACKLOG';
     }
     if (patch.priority !== undefined) body.priority = patch.priority;
     if (patch.position !== undefined) body.position = patch.position;
     if (patch.dueDate !== undefined) body.due_date = patch.dueDate;
-    if (patch.assigneeIds !== undefined) body.assignee_id = patch.assigneeIds[0] ?? null;
+    if (patch.completedAt !== undefined) body.completed_at = patch.completedAt;
+    if (patch.assigneeIds !== undefined) body.assignee_ids = patch.assigneeIds;
     if (patch.labelIds !== undefined) body.label_ids = patch.labelIds;
     if (patch.blockedByIds !== undefined) body.blocked_by_ids = patch.blockedByIds;
-    if (patch.deadlineChanges !== undefined) body.deadline_changes = patch.deadlineChanges;
-    if (patch.stagnationDays !== undefined) body.stagnation_days = patch.stagnationDays;
     if (patch.estimateHours !== undefined) body.estimate_hours = patch.estimateHours;
     const response = await apiFetch(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
     if (!response.ok) throw new Error(await response.text());
     return mapTask(await response.json() as Record<string, unknown>);
   },
   async create(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<Task> {
+    const requestBody = {
+      board_id: task.boardId,
+      title: task.title,
+      description: task.description,
+      list_id: task.listId,
+      priority: task.priority,
+      position: task.position,
+      due_date: task.dueDate,
+      completed_at: task.completedAt,
+      assignee_ids: task.assigneeIds,
+      label_ids: task.labelIds,
+      blocked_by_ids: task.blockedByIds,
+      estimate_hours: task.estimateHours,
+    };
     const response = await apiFetch('/tasks', {
       method: 'POST',
-      body: JSON.stringify({
-        board_id: task.boardId,
-        title: task.title,
-        description: task.description,
-        list_id: task.listId,
-        status: task.listId === 'list-5' ? 'DONE' : task.listId === 'list-4' ? 'IN_REVIEW' : task.listId === 'list-3' ? 'IN_PROGRESS' : 'TODO',
-        priority: task.priority,
-        position: task.position,
-        due_date: task.dueDate,
-        assignee_id: task.assigneeIds[0] ?? null,
-        label_ids: task.labelIds,
-        blocked_by_ids: task.blockedByIds,
-        estimate_hours: task.estimateHours,
-      }),
+      body: JSON.stringify(requestBody),
     });
     if (!response.ok) throw new Error(await response.text());
     return mapTask(await response.json() as Record<string, unknown>);
@@ -170,22 +206,25 @@ export const taskService = {
 };
 
 function mapTask(row: Record<string, unknown>): Task {
-  const status = String(row.status ?? 'TODO');
-  const listId = typeof row.list_id === 'string'
-    ? row.list_id
-    : status === 'DONE' ? 'list-5' : status === 'IN_REVIEW' ? 'list-4' : status === 'IN_PROGRESS' ? 'list-3' : 'list-1';
+  if (typeof row.list_id !== 'string') throw new Error('Task response is missing its board list ID.');
   const assigneeIds = Array.isArray(row.assignee_ids)
     ? row.assignee_ids.map(String)
     : row.assignee_id ? [String(row.assignee_id)] : [];
+  const completedAt = typeof row.completed_at === 'string'
+    ? row.completed_at
+    : row.status === 'DONE'
+      ? String(row.updated_at)
+      : null;
   return {
     id: String(row.id),
     title: String(row.title),
     description: String(row.description ?? ''),
-    listId,
+    listId: row.list_id,
     boardId: String(row.board_id),
     position: Number(row.position ?? 0),
-    priority: (String(row.priority ?? 'MEDIUM') as Task['priority']),
+    priority: mapPriority(row.priority),
     dueDate: typeof row.due_date === 'string' ? row.due_date : null,
+    completedAt,
     assigneeIds,
     labelIds: Array.isArray(row.label_ids) ? row.label_ids.map(String) : [],
     createdAt: String(row.created_at),
@@ -197,73 +236,121 @@ function mapTask(row: Record<string, unknown>): Task {
   };
 }
 
+function mapPriority(value: unknown): Task['priority'] {
+  const priority = String(value ?? 'medium').toUpperCase();
+  switch (priority) {
+    case 'LOW':
+    case 'MEDIUM':
+    case 'HIGH':
+      return priority;
+    case 'CRITICAL':
+    case 'URGENT':
+      return 'URGENT';
+    default:
+      throw new Error(`Unsupported task priority returned by API: ${String(value)}`);
+  }
+}
+
 export const labelService = {
-  async list(): Promise<Label[]> {
-    return _labels;
+  async list(workspaceId?: string | null, knownBoards?: Board[]): Promise<Label[]> {
+    const boards = knownBoards ?? (workspaceId === null ? [] : await boardService.list(workspaceId));
+    const rows = await Promise.all(boards.map(async (board) => {
+      const response = await apiFetch(`/boards/${board.id}/labels`);
+      if (!response.ok) throw new Error(await response.text());
+      return await response.json() as Array<{ id: string; name: string; color?: string | null }>;
+    }));
+    return rows.flatMap((labels, index) => labels.map((label) => mapLabel(label, boards[index].id)));
+  },
+  async create(boardId: string, name: string): Promise<Label> {
+    const response = await apiFetch(`/boards/${boardId}/labels`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+    const row = await response.json() as { id: string; name: string; color?: string | null };
+    return mapLabel(row, boardId);
   },
 };
 
 export const userService = {
-  async list(): Promise<User[]> {
-    const workspaces = await workspaceService.list();
-    if (!workspaces[0]) return [];
-    const response = await apiFetch(`/workspaces/${workspaces[0].id}/members`);
+  async list(workspaceId?: string | null): Promise<User[]> {
+    const targetWorkspaceId = workspaceId === undefined ? (await workspaceService.list())[0]?.id : workspaceId;
+    if (!targetWorkspaceId) return [];
+    const response = await apiFetch(`/workspaces/${targetWorkspaceId}/members`);
     if (!response.ok) throw new Error(await response.text());
-    const rows = await response.json() as Array<{ user_id: string; email?: string; name?: string; initials?: string; avatar_color?: string; title?: string; role: Membership['role'] | 'ADMIN' }>;
+    const rows = await response.json() as Array<{ user_id: string; full_name?: string | null; name?: string | null; initials?: string; avatar_color?: string; avatar_url?: string | null; role: Membership['role'] }>;
     return rows.map((row) => ({
       id: row.user_id,
-      name: row.name ?? row.email ?? 'Team member',
-      email: row.email ?? '',
-      initials: row.initials ?? (row.name ?? row.email ?? 'TM').slice(0, 2).toUpperCase(),
+      name: row.full_name?.trim() || row.name?.trim() || 'Team member',
+      email: '',
+      initials: row.initials ?? row.user_id.slice(0, 2).toUpperCase(),
       color: row.avatar_color ?? '#B8E4D0',
       role: row.role,
-      title: row.title ?? '',
+      title: '',
+      avatarUrl: row.avatar_url ?? null,
     }));
   },
-  async current(): Promise<User> {
+  async current(workspaceId?: string | null, knownUsers?: User[]): Promise<User> {
     const response = await apiFetch('/me');
     if (!response.ok) throw new Error(await response.text());
-    const row = await response.json() as { id: string; email?: string; profile?: { name?: string; initials?: string; avatar_color?: string; title?: string } | null };
+    const row = await response.json() as { id: string; email?: string; profile?: { full_name?: string | null; avatar_url?: string | null } | null };
     const profile = row.profile ?? {};
-    let role: User['role'] = 'MEMBER';
-    try {
-      const workspaces = await workspaceService.list();
-      if (workspaces[0]) {
-        const memberResponse = await apiFetch(`/workspaces/${workspaces[0].id}/members`);
-        if (memberResponse.ok) {
-          const members = await memberResponse.json() as Array<{ user_id: string; role: User['role'] | 'ADMIN' }>;
-          const membership = members.find((member) => member.user_id === row.id);
-          if (membership) role = membership.role as User['role'];
-        }
+    let role: User['role'] = 'member';
+    const targetWorkspaceId = workspaceId === undefined ? (await workspaceService.list())[0]?.id : workspaceId;
+    if (targetWorkspaceId) {
+      let membership: Pick<User, 'role'> | undefined;
+      if (knownUsers) {
+        membership = knownUsers.find((member) => member.id === row.id);
+      } else {
+        const memberResponse = await apiFetch(`/workspaces/${targetWorkspaceId}/members`);
+        if (!memberResponse.ok) throw new Error(await memberResponse.text());
+        const members = await memberResponse.json() as Array<{ user_id: string; role: User['role'] }>;
+        const member = members.find((item) => item.user_id === row.id);
+        if (member) membership = { role: member.role };
       }
-    } catch {
-      role = 'MEMBER';
+      if (membership) {
+        role = membership.role;
+      }
     }
+    const name = profile.full_name?.trim() || 'Account';
     return {
       id: row.id,
-      name: profile.name ?? row.email?.split('@')[0] ?? 'User',
+      name,
+      profileName: profile.full_name?.trim() || null,
       email: row.email ?? '',
-      initials: profile.initials ?? 'U',
-      color: profile.avatar_color ?? '#B8E4D0',
+      initials: name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase(),
+      color: '#B8E4D0',
       role,
-      title: profile.title ?? '',
+      title: '',
+      avatarUrl: profile.avatar_url ?? null,
     };
   },
 };
 
+export const profileService = {
+  async updateOwnFullName(userId: string, fullName: string): Promise<void> {
+    if (!supabase) throw new Error('Supabase authentication is not configured.');
+    const { error } = await supabase
+      .from('profiles')
+      .update({ full_name: fullName })
+      .eq('id', userId);
+    if (error) throw error;
+  },
+};
+
 export const membershipService = {
-  async list(): Promise<Membership[]> {
-    const workspace = await workspaceService.current();
-    if (!workspace) return [];
-    const response = await apiFetch(`/workspaces/${workspace.id}/members`);
+  async list(workspaceId?: string): Promise<Membership[]> {
+    const targetWorkspaceId = workspaceId ?? (await workspaceService.current())?.id;
+    if (!targetWorkspaceId) return [];
+    const response = await apiFetch(`/workspaces/${targetWorkspaceId}/members`);
     if (!response.ok) throw new Error(await response.text());
     const rows = await response.json() as Array<{ user_id: string; role: Membership['role']; joined_at: string }>;
     return rows.map((row) => ({ userId: row.user_id, role: row.role, joinedAt: row.joined_at }));
   },
-  async setRole(userId: string, role: Membership['role']): Promise<void> {
-    const workspace = await workspaceService.current();
-    if (!workspace) throw new Error('No workspace available.');
-    const response = await apiFetch(`/workspaces/${workspace.id}/members/${userId}`, {
+  async setRole(userId: string, role: Membership['role'], workspaceId?: string): Promise<void> {
+    const targetWorkspaceId = workspaceId ?? (await workspaceService.current())?.id;
+    if (!targetWorkspaceId) throw new Error('No workspace available.');
+    const response = await apiFetch(`/workspaces/${targetWorkspaceId}/members/${userId}`, {
       method: 'PATCH',
       body: JSON.stringify({ role }),
     });
@@ -287,7 +374,17 @@ export const driftService = {
   async snapshot(boardId: string): Promise<DriftSnapshot> {
     const response = await apiFetch(`/boards/${boardId}/drift`);
     if (!response.ok) throw new Error(await response.text());
-    const row = await response.json() as {
+    return mapDrift(await response.json() as Record<string, unknown>);
+  },
+  async evaluate(boardId: string): Promise<DriftSnapshot> {
+    const response = await apiFetch(`/boards/${boardId}/drift/evaluate`, { method: 'POST' });
+    if (!response.ok) throw new Error(await response.text());
+    return mapDrift(await response.json() as Record<string, unknown>);
+  },
+};
+
+function mapDrift(row: Record<string, unknown>): DriftSnapshot {
+    const raw = row as {
       id: string;
       board_id: string;
       generated_at: string;
@@ -301,15 +398,15 @@ export const driftService = {
       historical_trend_available: boolean;
     };
     return {
-      id: row.id,
-      boardId: row.board_id,
-      generatedAt: row.generated_at,
-      driftScore: row.drift_score,
-      health: row.health,
-      trend: row.trend.map((point) => ({ date: point.date, score: point.score })),
-      factors: row.factors.map((factor) => ({
+      id: raw.id,
+      boardId: raw.board_id,
+      generatedAt: raw.generated_at,
+      driftScore: raw.drift_score,
+      health: raw.health,
+      trend: raw.trend.map((point) => ({ date: point.date, score: point.score })),
+      factors: raw.factors.map((factor) => ({
         id: String(factor.id),
-        category: String(factor.category) as RiskFactor['category'],
+        category: mapRiskFactorCategory(factor.category),
         label: String(factor.label),
         severity: String(factor.severity) as RiskFactor['severity'],
         score: Number(factor.score),
@@ -325,7 +422,7 @@ export const driftService = {
         recommendation: String(factor.recommendation),
         aiGenerated: Boolean(factor.ai_generated),
       })),
-      workload: row.workload.map((entry) => ({
+      workload: raw.workload.map((entry) => ({
         userId: entry.user_id,
         userName: entry.user_id,
         initials: 'TM',
@@ -334,7 +431,7 @@ export const driftService = {
         overdueTasks: entry.overdue_tasks,
         capacity: entry.capacity,
       })),
-      recoveryActions: row.recovery_actions.map((action) => ({
+      recoveryActions: raw.recovery_actions.map((action) => ({
         id: String(action.id),
         title: String(action.title),
         rationale: String(action.rationale),
@@ -343,21 +440,80 @@ export const driftService = {
         aiGenerated: Boolean(action.ai_generated),
         relatedTaskIds: Array.isArray(action.related_task_ids) ? action.related_task_ids.map(String) : [],
       })),
-      activity: [],
+      activity: Array.isArray(row.activity)
+        ? row.activity.filter(isRecord).map(mapActivity).sort(
+          (left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp),
+        )
+        : [],
     };
-  },
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function activityTypeFor(value: unknown): Activity['type'] {
+  switch (value) {
+    case 'task_moved':
+    case 'task_deleted':
+    case 'task_created':
+    case 'task_completed':
+    case 'deadline_changed':
+    case 'assignee_changed':
+    case 'comment_added':
+    case 'role_changed':
+    case 'summary_generated':
+      return value === 'assignee_changed' ? 'assignee_added' : value;
+    default:
+      return 'activity_recorded';
+  }
+}
+
+function mapActivity(row: Record<string, unknown>): Activity {
+  const taskId = typeof row.task_id === 'string' ? row.task_id : null;
+  const boardId = typeof row.board_id === 'string' ? row.board_id : null;
+  return {
+    id: String(row.id ?? ''),
+    type: activityTypeFor(row.event_type),
+    actorId: typeof row.actor_id === 'string' ? row.actor_id : 'unknown',
+    target: taskId ? 'Task' : boardId ? 'Board' : 'Workspace',
+    detail: typeof row.detail === 'string' ? row.detail : '',
+    timestamp: typeof row.created_at === 'string' ? row.created_at : '',
+    metadata: isRecord(row.metadata) ? row.metadata : {},
+  };
+}
+
+const riskFactorCategories: Record<string, RiskFactor['category']> = {
+  overdue: 'overdue',
+  approaching_deadline: 'approaching_deadline',
+  priority: 'priority',
+  deadline_churn: 'deadline_churn',
+  stagnation: 'stagnation',
+  dependency_bottleneck: 'dependency_bottleneck',
+  workload: 'workload',
 };
+
+function mapRiskFactorCategory(value: unknown): RiskFactor['category'] {
+  return typeof value === 'string' ? riskFactorCategories[value] ?? 'other' : 'other';
+}
 
 
 export const summaryService = {
   async get(boardId: string): Promise<AISummary | null> {
-    void boardId;
-    return null;
+    const response = await apiFetch(`/boards/${boardId}/summary`);
+    if (!response.ok) throw new Error(await response.text());
+    const row = await response.json() as Record<string, unknown> | null;
+    return row ? mapSummary(row) : null;
   },
   async generate(boardId: string): Promise<AISummary> {
     const response = await apiFetch(`/boards/${boardId}/summary`, { method: 'POST' });
     if (!response.ok) throw new Error(await response.text());
-    const row = await response.json() as {
+    return mapSummary(await response.json() as Record<string, unknown>);
+  },
+};
+
+function mapSummary(value: Record<string, unknown>): AISummary {
+    const row = value as {
       id: string;
       board_id: string;
       generated_at: string;
@@ -367,7 +523,7 @@ export const summaryService = {
       pending_work: string[];
       blockers: string[];
       priority_recommendations: Array<{ id: string; title: string; reasoning: string; urgency: PriorityRecommendation['urgency'] }>;
-      confidence: number;
+      confidence?: number | null;
     };
     return {
       id: row.id,
@@ -386,36 +542,15 @@ export const summaryService = {
       })),
       confidence: row.confidence,
     };
-  },
-};
+}
 
 export const activityService = {
-  async recent(): Promise<Activity[]> {
-    const workspaces = await workspaceService.list();
-    if (!workspaces[0]) return [];
-    const boards = await boardService.list(workspaces[0].id);
-    if (!boards[0]) return [];
-    const response = await apiFetch(`/boards/${boards[0].id}/activity`);
+  async recent(workspaceId?: string | null): Promise<Activity[]> {
+    const targetWorkspaceId = workspaceId === undefined ? (await workspaceService.list())[0]?.id : workspaceId;
+    if (!targetWorkspaceId) return [];
+    const response = await apiFetch(`/workspaces/${targetWorkspaceId}/activity`);
     if (!response.ok) throw new Error(await response.text());
-    const rows = await response.json() as Array<{ id: string; actor_id: string | null; event_type: string; detail: string; created_at: string; board_id: string | null }>;
-    return rows.map((row) => {
-      let type: Activity['type'] = 'task_updated' as unknown as Activity['type'];
-      if (row.event_type === 'task_created') type = 'task_created';
-      else if (row.event_type === 'task_moved') type = 'task_moved';
-      else if (row.event_type === 'task_deleted') type = 'task_moved';
-      else if (row.event_type === 'deadline_changed') type = 'deadline_changed';
-      else if (row.event_type === 'assignee_changed') type = 'assignee_added';
-      else if (row.event_type === 'board_created') type = 'task_created';
-      else if (row.event_type === 'workspace_created' || row.event_type === 'workspace_updated') type = 'role_changed';
-      else type = 'task_moved';
-      return {
-        id: row.id,
-        type,
-        actorId: row.actor_id ?? 'unknown',
-        target: row.board_id ?? 'Workspace',
-        detail: row.detail,
-        timestamp: row.created_at,
-      };
-    });
+    const rows = await response.json() as Array<Record<string, unknown>>;
+    return rows.map(mapActivity);
   },
 };

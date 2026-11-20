@@ -9,7 +9,7 @@ import { cx, isOverdue, labelColorClasses, priorityMeta, relativeDay } from '@/l
 type Tab = 'all' | 'overdue' | 'today' | 'week' | 'done';
 
 export function MyTasksPage() {
-  const { currentUser, users, tasks, labels } = useApp();
+  const { currentUser, users, tasks, labels, workspace, loading, error } = useApp();
   const [tab, setTab] = useState<Tab>('all');
   const [query, setQuery] = useState('');
 
@@ -26,11 +26,12 @@ export function MyTasksPage() {
   }, [tasks, currentUser]);
 
   const filtered = useMemo(() => {
-    const now = new Date('2026-11-17T09:00:00Z');
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
     const weekEnd = new Date(now); weekEnd.setDate(weekEnd.getDate() + 7);
     return myTasks.filter((t) => {
       if (query && !t.title.toLowerCase().includes(query.toLowerCase())) return false;
-      const done = t.listId === 'list-5';
+      const done = Boolean(t.completedAt);
       const overdue = isOverdue(t.dueDate) && !done;
       if (tab === 'overdue') return overdue;
       if (tab === 'done') return done;
@@ -42,10 +43,10 @@ export function MyTasksPage() {
 
   const tabs: { id: Tab; label: string; count: number }[] = [
     { id: 'all', label: 'All', count: myTasks.length },
-    { id: 'overdue', label: 'Overdue', count: myTasks.filter((t) => isOverdue(t.dueDate) && t.listId !== 'list-5').length },
-    { id: 'today', label: 'Today', count: myTasks.filter((t) => t.dueDate && new Date(t.dueDate).toDateString() === new Date('2026-11-17').toDateString() && t.listId !== 'list-5').length },
-    { id: 'week', label: 'This week', count: myTasks.filter((t) => t.dueDate && new Date(t.dueDate) <= new Date('2026-11-24') && t.listId !== 'list-5').length },
-    { id: 'done', label: 'Done', count: myTasks.filter((t) => t.listId === 'list-5').length },
+    { id: 'overdue', label: 'Overdue', count: myTasks.filter((t) => isOverdue(t.dueDate) && !t.completedAt).length },
+    { id: 'today', label: 'Today', count: myTasks.filter((t) => t.dueDate && new Date(t.dueDate).toDateString() === new Date().toDateString() && !t.completedAt).length },
+    { id: 'week', label: 'This week', count: myTasks.filter((t) => t.dueDate && new Date(t.dueDate) <= new Date(Date.now() + 7 * 86400000) && !t.completedAt).length },
+    { id: 'done', label: 'Done', count: myTasks.filter((t) => t.completedAt).length },
   ];
 
   return (
@@ -53,9 +54,19 @@ export function MyTasksPage() {
       <div>
         <p className="text-2xs font-semibold uppercase tracking-widest2 text-slatey-400">Personal</p>
         <h1 className="mt-1.5 font-display text-display-md font-bold tracking-tightish text-midnight">My tasks</h1>
-        <p className="mt-2 text-sm text-slatey">Everything assigned to you across Atlas Studio.</p>
+        <p className="mt-2 text-sm text-slatey">Everything assigned to you across {workspace?.name ?? 'your workspace'}.</p>
       </div>
 
+      {loading ? (
+        <p role="status" className="mt-6 text-sm text-slatey">Loading your tasks...</p>
+      ) : error ? (
+        <p role="alert" className="mt-6 rounded-xl border border-coral/20 bg-coral/[0.06] px-4 py-3 text-sm text-coral">{error}</p>
+      ) : !workspace ? (
+        <p role="status" className="mt-6 rounded-xl border border-amber/20 bg-amber/[0.06] px-4 py-3 text-sm text-midnight">
+          You do not have access to a workspace yet. Ask a workspace owner to add you.
+        </p>
+      ) : (
+      <>
       {/* Tabs + search */}
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-1 rounded-xl bg-white p-1 shadow-soft">
@@ -97,7 +108,7 @@ export function MyTasksPage() {
           <ul className="divide-y divide-midnight/5">
             {filtered.map((task, i) => {
               const pm = priorityMeta[task.priority];
-              const done = task.listId === 'list-5';
+              const done = Boolean(task.completedAt);
               const overdue = isOverdue(task.dueDate) && !done;
               const taskLabels = labels.filter((l) => task.labelIds.includes(l.id));
               const assignees = task.assigneeIds.map((id) => users.find((u) => u.id === id)).filter(Boolean) as typeof users;
@@ -134,6 +145,8 @@ export function MyTasksPage() {
           </ul>
         )}
       </Card>
+      </>
+      )}
     </div>
   );
 }

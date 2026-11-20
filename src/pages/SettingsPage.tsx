@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Bell, Globe, Moon, Palette, Shield, User as UserIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Avatar, Badge, Button, Card } from '@/components/ui';
 import { useApp } from '@/hooks/useApp';
 import { useToast } from '@/components/ui/Toast';
@@ -14,7 +14,7 @@ const sections = [
 ];
 
 export function SettingsPage() {
-  const { currentUser } = useApp();
+  const { currentUser, loading, error } = useApp();
   const { toast } = useToast();
   const [active, setActive] = useState('profile');
   const [name, setName] = useState(currentUser?.name ?? '');
@@ -22,6 +22,11 @@ export function SettingsPage() {
   const [emailNotif, setEmailNotif] = useState(true);
   const [driftAlerts, setDriftAlerts] = useState(true);
   const [weeklyDigest, setWeeklyDigest] = useState(false);
+
+  useEffect(() => {
+    setName(currentUser?.name ?? '');
+    setTitle(currentUser?.title ?? '');
+  }, [currentUser?.id, currentUser?.name, currentUser?.title]);
 
   return (
     <div className="mx-auto max-w-[1100px] px-6 py-8 md:px-10">
@@ -51,6 +56,14 @@ export function SettingsPage() {
 
         {/* Content */}
         <motion.div key={active} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+          {loading ? (
+            <p role="status" className="text-sm text-slatey">Loading account settings…</p>
+          ) : error ? (
+            <p role="alert" className="text-sm text-coral">{error}</p>
+          ) : !currentUser ? (
+            <p role="status" className="text-sm text-slatey">Account profile unavailable.</p>
+          ) : (
+            <>
           {active === 'profile' && (
             <Card hover>
               <div className="border-b border-midnight/8 px-6 py-5">
@@ -59,7 +72,7 @@ export function SettingsPage() {
               </div>
               <div className="space-y-5 px-6 py-6">
                 <div className="flex items-center gap-4">
-                  <Avatar initials={currentUser?.initials ?? 'AC'} color={currentUser?.color ?? '#D69A78'} size="lg" />
+                  <Avatar initials={currentUser.initials ?? 'U'} color={currentUser.color ?? '#D69A78'} avatarUrl={currentUser.avatarUrl} size="lg" />
                   <Button variant="outline" size="sm" onClick={() => toast({ type: 'info', title: 'Upload coming soon' })}>Change avatar</Button>
                 </div>
                 <Field label="Full name">
@@ -73,8 +86,8 @@ export function SettingsPage() {
                 </Field>
                 <div className="flex items-center gap-2">
                   <span className="text-2xs font-semibold uppercase tracking-widest2 text-slatey-400">Role</span>
-                  <span className={cx('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-2xs font-semibold', roleMeta[currentUser?.role ?? 'MEMBER'].pill)}>
-                    {roleMeta[currentUser?.role ?? 'MEMBER'].label}
+                  <span className={cx('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-2xs font-semibold', roleMeta[currentUser?.role ?? 'member'].pill)}>
+                    {roleMeta[currentUser?.role ?? 'member'].label}
                   </span>
                 </div>
               </div>
@@ -178,6 +191,8 @@ export function SettingsPage() {
                 <Button variant="primary" size="sm" onClick={() => toast({ type: 'success', title: 'Password updated' })}>Update password</Button>
               </div>
             </Card>
+          )}
+            </>
           )}
         </motion.div>
       </div>

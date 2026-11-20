@@ -5,12 +5,12 @@ import {
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Avatar, Badge, Button, Card } from '@/components/ui';
-import { ProgressRing, ProgressBar } from '@/components/ui/Progress';
+import { ProgressBar } from '@/components/ui/Progress';
 import { ActivityFeed } from '@/components/shared/ActivityFeed';
 import { useApp } from '@/hooks/useApp';
 import { driftService } from '@/services';
 import { cx, riskMeta } from '@/lib/utils';
-import type { DriftSnapshot, RiskFactor, RiskLevel } from '@/types';
+import type { DriftSnapshot, RiskFactor, RiskLevel, Task } from '@/types';
 
 const riskBadgeTone: Record<RiskLevel, 'sage' | 'amber' | 'apricot' | 'coral'> = {
   HEALTHY: 'sage',
@@ -21,25 +21,64 @@ const riskBadgeTone: Record<RiskLevel, 'sage' | 'amber' | 'apricot' | 'coral'> =
 
 const categoryMeta: Record<RiskFactor['category'], { icon: typeof Radar; label: string }> = {
   overdue: { icon: CalendarClock, label: 'Overdue tasks' },
+  approaching_deadline: { icon: CalendarClock, label: 'Approaching deadlines' },
+  priority: { icon: AlertTriangle, label: 'High-priority work' },
   deadline_churn: { icon: AlertTriangle, label: 'Deadline churn' },
   stagnation: { icon: TrendingUp, label: 'Stagnation' },
   dependency_bottleneck: { icon: GitBranch, label: 'Dependency bottleneck' },
   workload: { icon: Users, label: 'Workload' },
+  other: { icon: Info, label: 'Other risk signal' },
 };
 
 const effortMeta = { LOW: { label: 'Low effort', color: 'text-sage' }, MEDIUM: { label: 'Medium effort', color: 'text-amber' }, HIGH: { label: 'High effort', color: 'text-coral' } };
 const impactMeta = { LOW: { label: 'Low impact', color: 'text-slatey-400' }, MEDIUM: { label: 'Medium impact', color: 'text-amber' }, HIGH: { label: 'High impact', color: 'text-mint-500' } };
 
 export function DriftRadarPage() {
-  const { users, tasks } = useApp();
+  const { users, tasks, boards, loading: appLoading, error: appError, workspace } = useApp();
   const [snapshot, setSnapshot] = useState<DriftSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
+  const [evaluating, setEvaluating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    driftService.snapshot('b1').then((s) => { setSnapshot(s); setLoading(false); });
-  }, []);
+    if (appLoading || appError || !workspace) return;
+    const boardId = boards[0]?.id;
+    if (!boardId) {
+      setLoading(false);
+      setSnapshot(null);
+      setError(null);
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    setError(null);
+    driftService.snapshot(boardId).then((s) => {
+      if (!active) return;
+      setSnapshot(s);
+      setLoading(false);
+    }).catch((cause) => {
+      if (!active) return;
+      setError(cause instanceof Error ? cause.message : 'Unable to load drift analytics.');
+      setLoading(false);
+    });
+    return () => { active = false; };
+  }, [appLoading, appError, workspace, boards]);
 
-  if (loading || !snapshot) {
+  const evaluate = async () => {
+    const boardId = boards[0]?.id;
+    if (!boardId) return;
+    setEvaluating(true);
+    try {
+      setSnapshot(await driftService.evaluate(boardId));
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to save drift evaluation.');
+    } finally {
+      setEvaluating(false);
+    }
+  };
+
+  if (appLoading || loading) {
     return (
       <div className="mx-auto max-w-[1400px] px-6 py-8 md:px-10">
         <div className="skeleton h-8 w-64" />
@@ -54,8 +93,46 @@ export function DriftRadarPage() {
     );
   }
 
+  if (appError) {
+    return (
+      <div className="mx-auto max-w-[1400px] px-6 py-8 md:px-10">
+        <p role="alert" className="rounded-2xl border border-coral/20 bg-coral/[0.06] p-5 text-sm text-coral">{appError}</p>
+      </div>
+    );
+  }
+
+  if (!workspace) {
+    return (
+      <div className="mx-auto max-w-[1400px] px-6 py-8 md:px-10">
+        <p role="status" className="text-sm text-slatey">No workspace membership.</p>
+      </div>
+    );
+  }
+
+  if (!boards.length) {
+    return (
+      <div className="mx-auto max-w-[1400px] px-6 py-8 md:px-10">
+        <p role="status" className="text-sm text-slatey">No boards are available in this workspace.</p>
+      </div>
+    );
+  }
+
+  if (!snapshot) {
+    return (
+      <div className="mx-auto max-w-[1400px] px-6 py-8 md:px-10">
+        <div role="alert" className="rounded-2xl border border-coral/20 bg-coral/[0.06] p-5 text-sm text-coral">
+          {error ?? 'Drift analytics unavailable.'}
+        </div>
+        <Button className="mt-4" variant="primary" size="md" onClick={evaluate} disabled={evaluating}>
+          {evaluating ? 'Evaluating…' : 'Evaluate drift'}
+        </Button>
+      </div>
+    );
+  }
+
   const rm = riskMeta[snapshot.health];
   const taskById = (id: string) => tasks.find((t) => t.id === id);
+  const hasAiRecommendations = snapshot.recoveryActions.some((action) => action.aiGenerated);
 
   return (
     <div className="mx-auto max-w-[1400px] px-6 py-8 md:px-10">
@@ -68,9 +145,13 @@ export function DriftRadarPage() {
           <h1 className="mt-1.5 font-display text-display-md font-bold tracking-tightish text-midnight">Commitment Drift Radar</h1>
           <p className="mt-2 max-w-xl text-sm text-slatey">Deterministic signals read from your board, explained by AI. Not a vanity dashboard — every number traces back to a task.</p>
         </div>
+        {error && <p role="alert" className="mt-3 text-xs text-coral">{error}</p>}
         <div className="flex items-center gap-2">
           <Badge tone={riskBadgeTone[snapshot.health]} dot>{rm.label}</Badge>
           <span className="text-2xs text-slatey-400">Updated {new Date(snapshot.generatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
+          <Button variant="outline" size="sm" onClick={evaluate} disabled={evaluating}>
+            {evaluating ? 'Evaluating…' : 'Re-evaluate'}
+          </Button>
         </div>
       </div>
 
@@ -174,14 +255,17 @@ export function DriftRadarPage() {
           <CardHeader
             title="Recommended recovery actions"
             subtitle="Prioritized by impact"
-            action={
+            action={snapshot.recoveryActions.length > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full bg-mint-50 px-2.5 py-1 text-2xs font-semibold text-mint-500">
-                <Sparkles className="h-3 w-3" /> AI-assisted
+                {hasAiRecommendations ? <Sparkles className="h-3 w-3" /> : <Info className="h-3 w-3" />}
+                {hasAiRecommendations ? 'AI-assisted' : 'Evidence-based'}
               </span>
-            }
+            )}
           />
           <div className="space-y-2.5 px-4 pb-5">
-            {snapshot.recoveryActions.map((a) => (
+            {snapshot.recoveryActions.length === 0 ? (
+              <p role="status" className="px-2 py-2 text-sm text-slatey">No recovery actions are recommended for the current risk signals.</p>
+            ) : snapshot.recoveryActions.map((a) => (
               <div key={a.id} className="rounded-xl border border-apricot/20 bg-apricot/[0.05] p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
@@ -222,17 +306,19 @@ export function DriftRadarPage() {
       <Card className="mt-4" hover>
         <CardHeader title="Activity history" subtitle="Events that shaped the current drift" />
         <div className="px-3 pb-5">
-          <ActivityFeed items={snapshot.activity} users={users} />
+          {snapshot.activity.length > 0
+            ? <ActivityFeed items={snapshot.activity} users={users} />
+            : <p role="status" className="px-2 py-2 text-sm text-slatey">No drift events have been recorded yet.</p>}
         </div>
       </Card>
     </div>
   );
 }
 
-function RiskFactorCard({ factor, taskById, delay }: { factor: RiskFactor; taskById: (id: string) => any; delay: number }) {
+function RiskFactorCard({ factor, taskById, delay }: { factor: RiskFactor; taskById: (id: string) => Task | undefined; delay: number }) {
   const [expanded, setExpanded] = useState(false);
   const rm = riskMeta[factor.severity];
-  const meta = categoryMeta[factor.category];
+  const meta = categoryMeta[factor.category] ?? categoryMeta.other;
 
   return (
     <motion.div
@@ -316,7 +402,7 @@ function TrendChart({ points }: { points: { date: string; score: number }[] }) {
   const h = 140;
   const pad = 24;
   const max = 100;
-  const stepX = (w - pad * 2) / (points.length - 1);
+  const stepX = (w - pad * 2) / Math.max(points.length - 1, 1);
   const coords = points.map((p, i) => ({ x: pad + i * stepX, y: h - pad - (p.score / max) * (h - pad * 2), ...p }));
   const line = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c.x},${c.y}`).join(' ');
   const area = `${line} L${coords[coords.length - 1].x},${h - pad} L${coords[0].x},${h - pad} Z`;

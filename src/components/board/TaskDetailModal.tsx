@@ -72,6 +72,7 @@ export function TaskDetailModal({ task, onClose }: TaskDetailModalProps) {
     if (!canEdit) return;
     if (!title.trim()) { toast({ type: 'error', title: 'Title required', message: 'Give the task a name before saving.' }); return; }
     setSaving(true);
+    const completionChanged = isComplete !== Boolean(task.completedAt);
     const patch = {
       title: title.trim(),
       description: description.trim(),
@@ -89,7 +90,17 @@ export function TaskDetailModal({ task, onClose }: TaskDetailModalProps) {
       } else {
         const deadlineChanged = dueDate && task.dueDate && new Date(dueDate).getTime() !== new Date(task.dueDate.slice(0, 10)).getTime();
         await updateTask(task.id, patch);
-        toast({ type: 'success', title: 'Task updated', message: deadlineChanged ? 'Due date updated — drift signal refreshed.' : 'Changes saved.' });
+        toast({
+          type: 'success',
+          title: completionChanged ? (isComplete ? 'Task completed' : 'Task reopened') : 'Task updated',
+          message: completionChanged && deadlineChanged
+            ? 'Completion and due date saved — drift signal refreshed.'
+            : completionChanged
+              ? 'Completion status saved.'
+              : deadlineChanged
+                ? 'Due date updated — drift signal refreshed.'
+                : 'Changes saved.',
+        });
       }
       onClose();
     } catch (cause) {
@@ -306,16 +317,28 @@ export function TaskDetailModal({ task, onClose }: TaskDetailModalProps) {
               <Trash2 className="h-3.5 w-3.5" /> Delete
             </Button>
           ) : <span />}
-          <div className="flex gap-2">
-            {!isNew && canEdit && (
-              <Button variant="outline" size="sm" onClick={() => setIsComplete((value) => !value)}>
-                <Check className="h-3.5 w-3.5" /> {isComplete ? 'Reopen' : 'Mark complete'}
-              </Button>
+          <div className="flex flex-col items-end gap-2">
+            {!isNew && isComplete !== Boolean(task.completedAt) && (
+              <span role="status" className="self-center text-xs text-amber">
+                Completion change is unsaved; select Save changes to persist it.
+              </span>
             )}
-            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-            {canEdit && <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving…' : isNew ? 'Create task' : 'Save changes'}
-            </Button>}
+            <div className="flex gap-2">
+              {!isNew && canEdit && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-pressed={isComplete}
+                  onClick={() => setIsComplete((value) => !value)}
+                >
+                  <Check className="h-3.5 w-3.5" /> {isComplete ? 'Reopen' : 'Mark complete'}
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+              {canEdit && <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving…' : isNew ? 'Create task' : 'Save changes'}
+              </Button>}
+            </div>
           </div>
         </div>
       </div>

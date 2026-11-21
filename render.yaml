@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: flowboard-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: JWT_AUDIENCE
+        value: authenticated
+      - key: JWT_ALGORITHMS
+        value: ES256,RS256,HS256
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: AI_PROVIDER
+        value: openai
+      - key: AI_TIMEOUT_SECONDS
+        value: "20"
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_MODEL
+        sync: false
+      - key: AI_BASE_URL
+        sync: false

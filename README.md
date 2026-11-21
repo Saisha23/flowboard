@@ -144,6 +144,38 @@ npm run dev
 
 Vite prints the local frontend URL. FastAPI's interactive API documentation is available at `http://localhost:8000/docs` while the backend is running.
 
+## Production deployment configuration
+
+### Vercel frontend
+
+The root `vercel.json` configures `npm run build`, the `dist` output directory, and SPA rewrites for the application routes. These rewrites do not proxy API calls or rewrite Vite asset paths.
+
+Set these Vercel build environment variables:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY` (publishable/anon key only)
+- `VITE_API_URL` (the deployed backend origin)
+
+The localhost API fallback is development-only. A production build without `VITE_API_URL` reports an explicit configuration error instead of sending API requests to localhost. Vite variables are included in browser code; do not put service-role keys, JWT secrets, or AI provider credentials in them.
+
+### Render backend
+
+The root `render.yaml` defines the backend service root, dependency installation, Uvicorn command, and `/health` liveness check. Configure its `sync: false` environment variables in Render's dashboard:
+
+- Required: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `CORS_ORIGINS`.
+- `CORS_ORIGINS` must be a comma-separated list of exact frontend origins (scheme and host, optional port), without paths or wildcards.
+- `JWT_AUDIENCE` and `JWT_ALGORITHMS` use the Supabase defaults in `render.yaml`; override `JWT_ISSUER` only if the Auth issuer differs from the project URL.
+- `SUPABASE_JWT_SECRET` is needed only for legacy HS256 tokens.
+- For AI summaries, configure `AI_API_KEY`, `AI_MODEL`, and `AI_BASE_URL` in Render. For Groq's OpenAI-compatible API, keep `AI_PROVIDER=openai` and supply the Groq-compatible base URL and model in the dashboard. `AI_TIMEOUT_SECONDS` defaults to 20.
+
+Render provides `PORT`; Uvicorn binds to `0.0.0.0` and uses that value. `/health` is a liveness check and does not verify Supabase connectivity or credentials.
+
+### Supabase Auth
+
+Set the Supabase Site URL to the deployed frontend origin and add the exact signup redirect (`/login`) and password-reset redirect (`/reset-password`) URLs to the Auth redirect allowlist. The frontend builds those redirects from `window.location.origin`; configure preview origins only if they are intentionally supported.
+
+Deployment configuration does not apply database migrations. Review the existing project's schema and RLS policies before making any database changes.
+
 ## Tests and checks
 
 Run frontend tests, TypeScript checking, and a production build from the project root:

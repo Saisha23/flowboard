@@ -1,8 +1,17 @@
 import { supabase } from './supabase';
 
-const apiUrl = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? 'http://localhost:8000';
+const LOCAL_API_URL = 'http://localhost:8000';
+
+export function resolveApiBaseUrl(configuredUrl: string | undefined, isDevelopment: boolean): string | undefined {
+  const trimmedUrl = configuredUrl?.trim().replace(/\/+$/, '');
+  if (trimmedUrl) return trimmedUrl;
+  return isDevelopment ? LOCAL_API_URL : undefined;
+}
+
+const apiUrl = resolveApiBaseUrl(import.meta.env.VITE_API_URL, import.meta.env.DEV);
 
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  if (!apiUrl) throw new Error('Backend API URL is not configured. Set VITE_API_URL for this deployment.');
   if (!supabase) throw new Error('Authentication is not configured.');
   const { data, error } = await supabase.auth.getSession();
   if (error) throw error;

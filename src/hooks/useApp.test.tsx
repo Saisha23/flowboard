@@ -54,7 +54,7 @@ function makeUser(id: string): User {
 }
 
 function AppDataSnapshot() {
-  const { currentUser, users, workspaces, workspace, boards, loading, error, reloadWorkspace } = useApp();
+  const { currentUser, users, workspaces, workspace, boards, tasks, loading, error, reloadWorkspace, updateTask } = useApp();
   const [reloadError, setReloadError] = useState<string | null>(null);
   return (
     <div>
@@ -66,7 +66,9 @@ function AppDataSnapshot() {
       <span data-testid="workspace">{workspace?.id ?? 'none'}</span>
       <span data-testid="error">{error ?? 'none'}</span>
       <span data-testid="boards">{boards.map((board) => board.id).join(',')}</span>
+      <span data-testid="completed-count">{tasks.filter((task) => task.completedAt).length}</span>
       <span data-testid="reload-error">{reloadError ?? 'none'}</span>
+      <button onClick={() => void updateTask('task-1', { completedAt: '2026-11-21T12:00:00Z' })}>Complete task</button>
       <button onClick={() => void reloadWorkspace('workspace-new', true).catch((cause) => setReloadError(cause.message))}>Reload new workspace</button>
     </div>
   );
@@ -180,6 +182,53 @@ describe('AppProvider authentication lifecycle', () => {
       expect(screen.getByTestId('loading').textContent).toBe('false');
     });
     expect(services.listWorkspaces).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes completed task counts from the persisted task update response', async () => {
+    authState.loading = false;
+    authState.user = { id: 'signed-in-user' };
+    const task = {
+      id: 'task-1',
+      title: 'Release checklist',
+      description: '',
+      listId: 'list-1',
+      boardId: 'board-1',
+      position: 0,
+      priority: 'MEDIUM' as const,
+      dueDate: null,
+      completedAt: null,
+      assigneeIds: [],
+      labelIds: [],
+      createdAt: '2026-11-20T00:00:00Z',
+      updatedAt: '2026-11-20T00:00:00Z',
+      deadlineChanges: 0,
+      stagnationDays: 0,
+      blockedByIds: [],
+      estimateHours: null,
+    };
+    services.listBoards.mockResolvedValue([{
+      id: 'board-1',
+      workspaceId: 'workspace-1',
+      name: 'Release',
+      description: '',
+      color: 'mint',
+    }]);
+    services.tasksForBoard.mockResolvedValue([task]);
+    services.updateTask.mockImplementation(async (_id, patch) => ({
+      ...task,
+      ...patch,
+      updatedAt: '2026-11-21T12:00:00Z',
+    }));
+    renderProvider();
+
+    await waitFor(() => expect(screen.getByTestId('completed-count').textContent).toBe('0'));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete task' }));
+
+    await waitFor(() => expect(screen.getByTestId('completed-count').textContent).toBe('1'));
+    expect(services.updateTask).toHaveBeenCalledWith(
+      'task-1',
+      { completedAt: '2026-11-21T12:00:00Z' },
+    );
   });
 
   it('ignores a stale response after switching authenticated users', async () => {

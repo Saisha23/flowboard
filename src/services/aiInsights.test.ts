@@ -328,6 +328,106 @@ describe('AISummaryPage PDF export buttons', () => {
     expect(popupMock.document.writtenHtml).toContain('Resolve API blocker');
   });
 
+  it('marks a saved summary stale when a board task changed after generation', async () => {
+    vi.spyOn(summaryService, 'get').mockResolvedValue(MOCK_SUMMARY);
+    vi.spyOn(summaryService, 'generate');
+    vi.mocked(useApp).mockReturnValue({
+      currentUser: null,
+      users: [],
+      workspace: { id: 'workspace-1', name: 'Workspace', plan: 'FREE', color: '#ffffff' },
+      workspaces: [],
+      boards: [{ id: 'board-1', workspaceId: 'workspace-1', name: 'Test Board', description: '', color: 'mint' }],
+      lists: [],
+      tasks: [{
+        id: 'task-1',
+        title: 'Task changed after summary',
+        description: '',
+        listId: 'list-1',
+        boardId: 'board-1',
+        position: 0,
+        priority: 'MEDIUM',
+        dueDate: null,
+        completedAt: '2026-11-21T00:00:00Z',
+        assigneeIds: [],
+        labelIds: [],
+        createdAt: '2026-11-18T00:00:00Z',
+        updatedAt: '2026-11-21T00:00:00Z',
+        deadlineChanges: 0,
+        stagnationDays: 0,
+        blockedByIds: [],
+        estimateHours: null,
+      }],
+      labels: [],
+      loading: false,
+      error: null,
+      refreshTasks: vi.fn(),
+      updateTask: vi.fn(),
+      createTask: vi.fn(),
+      deleteTask: vi.fn(),
+      switchWorkspace: vi.fn(),
+      reloadWorkspace: vi.fn(),
+    } as ReturnType<typeof useApp>);
+
+    render(createElement(
+      MemoryRouter,
+      null,
+      createElement(ToastProvider, null, createElement(AISummaryPage)),
+    ));
+
+    expect(await screen.findByText(/Board tasks changed after this summary was generated/)).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Regenerate' })).toBeTruthy();
+    expect(summaryService.generate).not.toHaveBeenCalled();
+  });
+
+  it('does not mark a summary stale when task updates predate generation', async () => {
+    vi.spyOn(summaryService, 'get').mockResolvedValue(MOCK_SUMMARY);
+    vi.mocked(useApp).mockReturnValue({
+      currentUser: null,
+      users: [],
+      workspace: { id: 'workspace-1', name: 'Workspace', plan: 'FREE', color: '#ffffff' },
+      workspaces: [],
+      boards: [{ id: 'board-1', workspaceId: 'workspace-1', name: 'Test Board', description: '', color: 'mint' }],
+      lists: [],
+      tasks: [{
+        id: 'task-1',
+        title: 'Task already included',
+        description: '',
+        listId: 'list-1',
+        boardId: 'board-1',
+        position: 0,
+        priority: 'MEDIUM',
+        dueDate: null,
+        completedAt: null,
+        assigneeIds: [],
+        labelIds: [],
+        createdAt: '2026-11-18T00:00:00Z',
+        updatedAt: '2026-11-19T00:00:00Z',
+        deadlineChanges: 0,
+        stagnationDays: 0,
+        blockedByIds: [],
+        estimateHours: null,
+      }],
+      labels: [],
+      loading: false,
+      error: null,
+      refreshTasks: vi.fn(),
+      updateTask: vi.fn(),
+      createTask: vi.fn(),
+      deleteTask: vi.fn(),
+      switchWorkspace: vi.fn(),
+      reloadWorkspace: vi.fn(),
+    } as ReturnType<typeof useApp>);
+
+    render(createElement(
+      MemoryRouter,
+      null,
+      createElement(ToastProvider, null, createElement(AISummaryPage)),
+    ));
+
+    await screen.findByText(MOCK_SUMMARY.executiveSummary);
+    expect(screen.queryByText(/Board tasks changed after this summary was generated/)).toBeNull();
+  });
+
   it('shows an error and no success toast when PDF document generation fails', async () => {
     vi.spyOn(summaryService, 'get').mockResolvedValue(MOCK_SUMMARY);
     const { popupMock } = setupPopupMock();

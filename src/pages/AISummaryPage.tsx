@@ -65,6 +65,11 @@ export function AISummaryPage() {
 
   const boardTasks = tasks.filter((task) => task.boardId === board?.id);
   const completedCount = boardTasks.filter((task) => task.completedAt).length;
+  const summaryGeneratedAt = summary ? Date.parse(summary.generatedAt) : Number.NaN;
+  const summaryIsStale = Number.isFinite(summaryGeneratedAt) && boardTasks.some((task) => {
+    const taskUpdatedAt = Date.parse(task.updatedAt);
+    return Number.isFinite(taskUpdatedAt) && taskUpdatedAt > summaryGeneratedAt;
+  });
 
   const handleExportPdf = (report: AISummary) => {
     let initiated: boolean;
@@ -166,6 +171,12 @@ export function AISummaryPage() {
           </>
         )}
       </div>}
+
+      {summaryIsStale && (
+        <p role="status" className="mt-4 rounded-xl border border-amber/20 bg-amber/[0.06] px-4 py-3 text-sm text-midnight">
+          Board tasks changed after this summary was generated. Select Regenerate to refresh AI Insights.
+        </p>
+      )}
 
       {loading ? (
         <p role="status" className="mt-6 text-sm text-slatey">Loading workspace data…</p>

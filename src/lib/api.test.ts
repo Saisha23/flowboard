@@ -15,7 +15,7 @@ vi.mock('./supabase', () => ({
   },
 }));
 
-import { apiFetch } from './api';
+import { apiFetch, resolveApiBaseUrl } from './api';
 
 beforeEach(() => {
   getSession.mockReset().mockResolvedValue({
@@ -30,6 +30,15 @@ afterEach(() => {
 });
 
 describe('apiFetch', () => {
+  it('uses localhost only in development when no API URL is configured', () => {
+    expect(resolveApiBaseUrl(undefined, true)).toBe('http://localhost:8000');
+    expect(resolveApiBaseUrl(undefined, false)).toBeUndefined();
+  });
+
+  it('normalizes a configured API URL without changing its origin', () => {
+    expect(resolveApiBaseUrl(' https://api.example.test/// ', false)).toBe('https://api.example.test');
+  });
+
   it('adds the Supabase access token as a Bearer token', async () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
@@ -38,7 +47,7 @@ describe('apiFetch', () => {
 
     const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     const [url, init] = call;
-    const apiUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, '') ?? 'http://localhost:8000';
+    const apiUrl = resolveApiBaseUrl(import.meta.env.VITE_API_URL, import.meta.env.DEV);
     expect(url).toBe(`${apiUrl}/me`);
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer test-access-token');
   });

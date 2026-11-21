@@ -311,6 +311,8 @@ def test_task_update_migration_preserves_rls_and_dependency_cycle_checks() -> No
     assert "public.task_labels" in rpc
     assert "public.task_dependencies" in rpc
     assert "dependencies must reference another task on the same board." in rpc
+    assert "completed_at = case" in rpc
+    assert "when p_task ? 'completed_at' then v_input.completed_at" in rpc
     assert "pg_advisory_xact_lock" in dependency_replacement
     assert dependency_replacement.index("pg_advisory_xact_lock") < dependency_replacement.index(
         "delete from public.task_dependencies"

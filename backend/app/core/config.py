@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -82,6 +83,34 @@ class Settings(BaseSettings):
         if not url.startswith("https://") and not url.startswith("http://"):
             raise ValueError("SUPABASE_URL must start with http:// or https://")
         return url
+
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, value: str) -> str:
+        origins = [origin.strip() for origin in value.split(",") if origin.strip()]
+        for origin in origins:
+            try:
+                parsed = urlsplit(origin)
+                parsed.port
+            except ValueError as exc:
+                raise ValueError("CORS_ORIGINS must contain valid exact origins.") from exc
+
+            if (
+                "*" in origin
+                or any(character.isspace() for character in origin)
+                or parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.path
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError(
+                    "CORS_ORIGINS must contain exact http:// or https:// origins "
+                    "without paths, credentials, query strings, or wildcards."
+                )
+        return ",".join(origins)
 
     @field_validator("supabase_jwt_secret", mode="before")
     @classmethod

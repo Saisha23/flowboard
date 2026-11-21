@@ -167,6 +167,35 @@ describe('TaskDetailModal task title', () => {
     });
   });
 
+  it('explains that completion is only persisted after saving the task', async () => {
+    const task = { ...makeDraft(), id: 'task-1', title: 'Existing task' };
+    const onClose = vi.fn();
+    render(<TaskDetailModal task={task} onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark complete' }));
+
+    expect(screen.getByRole('button', { name: 'Reopen' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('status').textContent).toContain('select Save changes to persist it');
+    expect(mocks.app.updateTask).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => {
+      expect(mocks.app.updateTask).toHaveBeenCalledWith(
+        'task-1',
+        expect.objectContaining({ completedAt: expect.any(String) }),
+      );
+    });
+    const [, patch] = mocks.app.updateTask.mock.calls[0];
+    expect(Number.isNaN(Date.parse(patch.completedAt as string))).toBe(false);
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'success',
+      title: 'Task completed',
+      message: 'Completion status saved.',
+    }));
+  });
+
   it('keeps blocker editing unavailable to a viewer', () => {
     mocks.app.currentUser = { id: 'user-1', role: 'viewer' };
     const task = { ...makeDraft(), id: 'task-1', title: 'Existing task' };

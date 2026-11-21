@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -54,6 +55,7 @@ class FakeSupabase:
         self.member_role = member_role
         self.board_name = board_name
         self.missing_activity_table = missing_activity_table
+        self.task_row = _task_row()
         self.rpc_calls: list[tuple[str, dict[str, object]]] = []
         self.saved_task_arguments: dict[str, object] | None = None
         self.insert_calls: list[tuple[str, dict[str, object]]] = []
@@ -116,7 +118,7 @@ class FakeSupabase:
                 for task_id in self.saved_task_arguments["p_blocked_by_ids"]
             ]
         if table == "tasks":
-            return [_task_row()]
+            return [self.task_row]
         if table == "activities":
             if self.missing_activity_table:
                 raise HTTPException(
@@ -137,7 +139,12 @@ class FakeSupabase:
             return [_task_row()]
         if function == "save_task_with_relationships":
             self.saved_task_arguments = arguments
-            return [{**_task_row(), **arguments["p_task"]}]
+            self.task_row = {
+                **self.task_row,
+                **arguments["p_task"],
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            return [self.task_row]
         raise AssertionError(f"Unexpected RPC: {function}")
 
     async def insert(self, table: str, row: dict[str, object]) -> dict[str, object]:
@@ -282,6 +289,34 @@ def test_task_update_rejects_viewer_before_rpc() -> None:
 
         assert response.status_code == 403
         assert fake.rpc_calls == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_task_completion_is_saved_and_returned_by_task_list() -> None:
+    fake = FakeSupabase()
+    client = _client_with(fake)
+    completion_time = "2026-11-21T12:00:00Z"
+    expected_completion = datetime.fromisoformat(completion_time.replace("Z", "+00:00"))
+    try:
+        response = client.patch(
+            f"/tasks/{TASK_ID}",
+            json={"completed_at": completion_time},
+        )
+
+        assert response.status_code == 200
+        assert datetime.fromisoformat(response.json()["completed_at"].replace("Z", "+00:00")) == expected_completion
+        assert response.json()["status"] == "DONE"
+        assert fake.saved_task_arguments is not None
+        assert fake.saved_task_arguments["p_task"] == {
+            "completed_at": "2026-11-21T12:00:00+00:00",
+        }
+
+        refreshed = client.get(f"/boards/{BOARD_ID}/tasks")
+
+        assert refreshed.status_code == 200
+        assert datetime.fromisoformat(refreshed.json()[0]["completed_at"].replace("Z", "+00:00")) == expected_completion
+        assert refreshed.json()[0]["status"] == "DONE"
     finally:
         app.dependency_overrides.clear()
 
